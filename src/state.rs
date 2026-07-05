@@ -87,6 +87,12 @@ pub struct Block {
     /// What this block is waiting on (present on `blocked` entries).
     #[serde(default)]
     pub blocked_by: Vec<BlockedBy>,
+    /// Execution priority (e.g. 1, 2, 3).
+    #[serde(default)]
+    pub priority: Option<u8>,
+    /// Target due date or timing string (e.g. "2026-07-15").
+    #[serde(default)]
+    pub due: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +136,18 @@ pub struct TrackBlock {
     /// Backlog-promotion provenance, when this block came from a backlog item.
     #[serde(default)]
     pub origin: Option<Origin>,
+    /// Execution priority (e.g. 1, 2, 3).
+    #[serde(default)]
+    pub priority: Option<u8>,
+    /// Target due date or timing string (e.g. "2026-07-15").
+    #[serde(default)]
+    pub due: Option<String>,
+    /// Automated execution workflow (e.g. "sdlc-run").
+    #[serde(default)]
+    pub sdlc_workflow: Option<String>,
+    /// Preferred model for automation (e.g. "opus").
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// One phase/wave entry in a leaf repo's `tracks[]`.
@@ -752,5 +770,70 @@ mod tests {
         assert_eq!(graph.edges[0].kind, StateEdgeKind::CrossRepo);
         assert_eq!(graph.edges[0].from, "bastion:BA.15.12");
         assert_eq!(graph.edges[0].to_ref, "mev:MV.3.P");
+    }
+
+    #[test]
+    fn block_shape_fields_roundtrip() {
+        let json_with_fields = r#"{
+            "repo": "okf-core",
+            "kind": "project",
+            "updated": "2026-07-05",
+            "focus": {
+                "now": [
+                    {
+                        "id": "BA.1.A",
+                        "title": "with fields",
+                        "priority": 1,
+                        "due": "2026-07-15"
+                    }
+                ]
+            },
+            "tracks": [
+                {
+                    "title": "Phase 1",
+                    "blocks": [
+                        {
+                            "id": "OK.1.A",
+                            "title": "block shape",
+                            "priority": 2,
+                            "due": "Q3",
+                            "sdlc_workflow": "sdlc-task",
+                            "model": "opus"
+                        },
+                        {
+                            "id": "OK.1.B",
+                            "title": "missing fields"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let file: StateFile = serde_json::from_str(json_with_fields).unwrap();
+
+        // Assert TrackBlock fields
+        let block_a = &file.tracks[0].blocks[0];
+        assert_eq!(block_a.priority, Some(2));
+        assert_eq!(block_a.due.as_deref(), Some("Q3"));
+        assert_eq!(block_a.sdlc_workflow.as_deref(), Some("sdlc-task"));
+        assert_eq!(block_a.model.as_deref(), Some("opus"));
+
+        // Assert backwards compatibility (omitted fields default to None)
+        let block_b = &file.tracks[0].blocks[1];
+        assert_eq!(block_b.priority, None);
+        assert_eq!(block_b.due, None);
+        assert_eq!(block_b.sdlc_workflow, None);
+        assert_eq!(block_b.model, None);
+
+        // Assert Block fields
+        let focus_now = &file.focus.now[0];
+        assert_eq!(focus_now.priority, Some(1));
+        assert_eq!(focus_now.due.as_deref(), Some("2026-07-15"));
+
+        // Roundtrip model fidelity
+        let round = serde_json::to_value(&file).unwrap();
+        let reparsed: StateFile = serde_json::from_value(round.clone()).unwrap();
+        let reserialized = serde_json::to_value(&reparsed).unwrap();
+        assert_eq!(round, reserialized);
     }
 }
