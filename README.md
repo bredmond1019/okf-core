@@ -60,4 +60,4 @@ designed to build standalone outside that workspace. See the
 No known limitations. This is a stable, leaf-level contract crate — no I/O, no path
 dependencies of its own — and its scope is intentionally minimal.
 
-Part of the broader Bastion Consolidation Program (see [master-plan](https://github.com/bredmond1019/bastion-os/tree/main)).
+Part of the broader **Bastion** ecosystem — see the [bastion-os](https://github.com/bredmond1019/bastion-os) front door for the full architecture.
