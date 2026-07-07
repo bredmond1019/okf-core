@@ -47,3 +47,17 @@ okf-core/
 ├── src/            ← frontmatter, graph, state logic
 └── Cargo.toml      ← crate manifest
 ```
+
+## Built within the Bastion workspace
+
+This crate is a member of the unified `core/` Cargo workspace and is consumed by sibling
+crates (`bastion`, `mev`) via **path dependency** — it isn't published to crates.io and isn't
+designed to build standalone outside that workspace. See the
+[`bastion-os`](https://github.com/bredmond1019/bastion-os) meta-repo for the full ecosystem.
+
+## Roadmap / Known limitations
+
+No known limitations. This is a stable, leaf-level contract crate — no I/O, no path
+dependencies of its own — and its scope is intentionally minimal.
+
+Part of the broader Bastion Consolidation Program (see [master-plan](https://github.com/bredmond1019/bastion-os/tree/main)).
