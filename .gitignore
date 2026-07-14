@@ -15,6 +15,6 @@ trees/
 .DS_Store
 *.sqlite
 state.json
-planning/
+/planning
 node_modules/
 target/
