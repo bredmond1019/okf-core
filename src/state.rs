@@ -240,12 +240,30 @@ pub struct Origin {
     pub slug: String,
 }
 
+/// Provenance pointer on a **backlog node** — where the node itself came from.
+///
+/// Distinct from [`Origin`], which lives on a *block* and records which backlog
+/// idea the block was promoted from (block→backlog). `BacklogOrigin` points the
+/// other direction: it records whether a backlog node was a hand-authored
+/// `/backlog-ticket` (`"backlog"`) or a promoted `/capture` note (`"capture"`).
+/// `kind == "capture"` is the lane classifier for the Attention board's
+/// "orphaned captures" sub-lane.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct BacklogOrigin {
+    /// Origin kind — `"capture"` or `"backlog"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Path to the pre-plan `notes.md`, when `kind == "capture"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Backlog — HQ queued-ideas graph node (v2)
 // ---------------------------------------------------------------------------
 
 /// One entry in the HQ brain `backlog[]` — a queued idea as a graph node.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Backlog {
     /// Stable node key (the notes-dir slug).
     pub slug: String,
@@ -267,6 +285,20 @@ pub struct Backlog {
     /// Path to the pre-plan notes doc.
     #[serde(default)]
     pub notes: Option<String>,
+    /// Where this node came from — a hand-authored ticket or a `/capture` note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<BacklogOrigin>,
+    /// Date recorded (`YYYY-MM-DD`). The staleness clock's anchor — a node with
+    /// no `created` cannot age (kept `Option` for back-compat; backfilled).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Last "keep / re-affirm" disposition date — a full staleness-clock reset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed: Option<String>,
+    /// Short-term "hide until" date, written by `/snooze`. Suppressed from the
+    /// Attention board + warnings while `today < snoozed_until`, regardless of age.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -301,8 +333,16 @@ pub struct Carryover {
     /// Human-readable condition under which this entry should be deleted.
     #[serde(default)]
     pub clears_when: Option<String>,
-    /// Date recorded (YYYY-MM-DD).
+    /// Date recorded (`YYYY-MM-DD` or full RFC3339).
     pub created: String,
+    /// Last "keep / re-affirm" disposition date — a full staleness-clock reset.
+    /// Staleness age is measured from `max(created, reviewed)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed: Option<String>,
+    /// Short-term "hide until" date, written by `/snooze`. Suppressed from the
+    /// Attention board + warnings while `today < snoozed_until`, regardless of age.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -835,5 +875,70 @@ mod tests {
         let reparsed: StateFile = serde_json::from_value(round.clone()).unwrap();
         let reserialized = serde_json::to_value(&reparsed).unwrap();
         assert_eq!(round, reserialized);
+    }
+
+    #[test]
+    fn attention_fields_roundtrip_and_omit_when_absent() {
+        // Backlog + carryover carrying the new attention fields parse fully...
+        let json = r#"{
+            "repo": "hq",
+            "kind": "brain",
+            "updated": "2026-07-15",
+            "backlog": [
+                {
+                    "slug": "tailscale-rag-db",
+                    "title": "Tailscale RAG DB",
+                    "repo": "core",
+                    "type": "research",
+                    "status": "idea",
+                    "created": "2026-06-16",
+                    "origin": {"type": "capture", "notes": "core/planning/tailscale-rag-db/notes.md"},
+                    "reviewed": "2026-07-10",
+                    "snoozed_until": "2026-07-20"
+                }
+            ],
+            "carryover": [
+                {
+                    "slug": "cortex-rename",
+                    "scope": {"cross_repo": true},
+                    "kind": "deferred",
+                    "text": "rename mev to cortex",
+                    "created": "2026-07-05T07:10:00-03:00",
+                    "reviewed": "2026-07-12"
+                }
+            ]
+        }"#;
+        let file: StateFile = serde_json::from_str(json).unwrap();
+        let bl = &file.backlog[0];
+        assert_eq!(bl.created.as_deref(), Some("2026-06-16"));
+        assert_eq!(bl.reviewed.as_deref(), Some("2026-07-10"));
+        assert_eq!(bl.snoozed_until.as_deref(), Some("2026-07-20"));
+        let origin = bl.origin.as_ref().expect("origin present");
+        assert_eq!(origin.kind, "capture");
+        assert_eq!(
+            origin.notes.as_deref(),
+            Some("core/planning/tailscale-rag-db/notes.md")
+        );
+        assert_eq!(file.carryover[0].reviewed.as_deref(), Some("2026-07-12"));
+
+        // ...and when the new fields are absent they must NOT serialize as `null`
+        // (skip_serializing_if), so first `emit-state --write` adds no noise.
+        let bare = Backlog {
+            slug: "x".to_string(),
+            title: "X".to_string(),
+            repo: "core".to_string(),
+            kind: "feature".to_string(),
+            status: "idea".to_string(),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&bare).unwrap();
+        let obj = v.as_object().unwrap();
+        assert!(!obj.contains_key("origin"), "origin must be omitted when None");
+        assert!(!obj.contains_key("created"), "created must be omitted when None");
+        assert!(!obj.contains_key("reviewed"), "reviewed must be omitted when None");
+        assert!(
+            !obj.contains_key("snoozed_until"),
+            "snoozed_until must be omitted when None"
+        );
     }
 }
