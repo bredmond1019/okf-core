@@ -93,6 +93,14 @@ pub struct Block {
     /// Target due date or timing string (e.g. "2026-07-15").
     #[serde(default)]
     pub due: Option<String>,
+    /// Cross-repo epic membership (slugs into the HQ `epics[]` registry).
+    ///
+    /// Carried on focus/rollup entries so a derived brain focus keeps membership
+    /// without a second join back to `tracks[]`. Skipped when empty so the
+    /// overwhelming majority of blocks (which belong to no epic) do not gain an
+    /// `"epics": []` key on the next `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +156,15 @@ pub struct TrackBlock {
     /// Preferred model for automation (e.g. "opus").
     #[serde(default)]
     pub model: Option<String>,
+    /// Cross-repo epic membership — zero or more slugs into the HQ `epics[]`
+    /// registry. Multi-valued because a block can genuinely serve two
+    /// initiatives at once (e.g. an API endpoint used by two Surfaces).
+    ///
+    /// Authored. Validated against the registry by mev
+    /// (`E_STATE_UNKNOWN_EPIC`). Skipped when empty so untagged blocks stay
+    /// byte-identical across an `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
 }
 
 /// One phase/wave entry in a leaf repo's `tracks[]`.
@@ -224,6 +241,42 @@ pub struct TierEntry {
     /// One-line summary of the tier's current state.
     #[serde(default)]
     pub summary: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Epic — HQ `epics[]` cross-repo initiative registry
+// ---------------------------------------------------------------------------
+
+/// One entry in the HQ brain's `epics[]` registry — a cross-repo initiative
+/// that groups blocks spanning several repos.
+///
+/// The registry is **HQ-only** (same precedent as `backlog[]`, D2): it is the
+/// closed vocabulary a block's `epics[]` membership is validated against, so a
+/// typo is an error rather than a silently-empty board. Membership itself is
+/// authored on the blocks, not listed here — `repos` is only a human hint.
+///
+/// Epic-to-epic relationships are **derived** from the block `depends_on`
+/// graph, never authored here: an epic-level `depends_on` would duplicate truth
+/// the block graph already holds.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct Epic {
+    /// Stable kebab-case key — the value blocks reference in their `epics[]`.
+    pub slug: String,
+    /// Human-readable name (e.g. `"Bastion OS"`).
+    pub title: String,
+    /// One-line description of what the initiative covers.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Lifecycle: `active` · `paused` · `complete`.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Repo-relative path to the owning master-plan / plan doc, when one exists.
+    #[serde(default)]
+    pub plan: Option<String>,
+    /// Repos the initiative is expected to touch. An authored hint for readers —
+    /// **not** the source of truth (that's the blocks' own `epics[]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +430,12 @@ pub struct StateFile {
     /// Tier pointers (HQ brain only).
     #[serde(default)]
     pub tiers: Vec<TierEntry>,
+    /// Cross-repo initiative registry (HQ brain only; empty elsewhere).
+    ///
+    /// Skipped when empty so every non-HQ file stays byte-identical across an
+    /// `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<Epic>,
     /// Optional top-level annotation note (seen in HQ state.json).
     #[serde(default)]
     pub note: Option<String>,
@@ -472,6 +531,11 @@ pub struct StateNode {
     pub id: String,
     /// Brief human description.
     pub title: String,
+    /// Cross-repo epic membership, copied from the authoring `TrackBlock`, so
+    /// graph consumers (and the emitted graph artifact) can filter by
+    /// initiative without re-reading every `state.json`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
     /// Absolute path of the file that registered this block (skipped in JSON).
     #[serde(skip)]
     pub source_path: PathBuf,
@@ -518,6 +582,7 @@ pub fn build_state_graph(files: &[(StateSource, StateFile)]) -> StateGraph {
                     repo: src.repo_slug.clone(),
                     id: block.id.clone(),
                     title: block.title.clone(),
+                    epics: block.epics.clone(),
                     source_path: path.clone(),
                 });
 
@@ -933,12 +998,149 @@ mod tests {
         };
         let v = serde_json::to_value(&bare).unwrap();
         let obj = v.as_object().unwrap();
-        assert!(!obj.contains_key("origin"), "origin must be omitted when None");
-        assert!(!obj.contains_key("created"), "created must be omitted when None");
-        assert!(!obj.contains_key("reviewed"), "reviewed must be omitted when None");
+        assert!(
+            !obj.contains_key("origin"),
+            "origin must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("created"),
+            "created must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("reviewed"),
+            "reviewed must be omitted when None"
+        );
         assert!(
             !obj.contains_key("snoozed_until"),
             "snoozed_until must be omitted when None"
         );
+    }
+
+    // -- epics ---------------------------------------------------------------
+
+    #[test]
+    fn epics_round_trip_on_blocks_and_registry() {
+        let json = r#"{
+            "repo": "hq",
+            "kind": "brain",
+            "updated": "2026-07-24",
+            "epics": [
+                {
+                    "slug": "bastion-os",
+                    "title": "Bastion OS",
+                    "description": "The five-layer practice OS",
+                    "status": "active",
+                    "plan": "core/planning/master-plan.md",
+                    "repos": ["bastion", "mev"]
+                }
+            ],
+            "tracks": [
+                {
+                    "title": "Phase 1",
+                    "blocks": [
+                        {
+                            "id": "HQ.1.A",
+                            "title": "shared block",
+                            "status": "open",
+                            "epics": ["bastion-os", "bastion-web"]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let file: StateFile = serde_json::from_str(json).expect("parses");
+
+        assert_eq!(file.epics.len(), 1);
+        let epic = &file.epics[0];
+        assert_eq!(epic.slug, "bastion-os");
+        assert_eq!(epic.title, "Bastion OS");
+        assert_eq!(epic.status.as_deref(), Some("active"));
+        assert_eq!(epic.plan.as_deref(), Some("core/planning/master-plan.md"));
+        assert_eq!(epic.repos, vec!["bastion", "mev"]);
+
+        assert_eq!(
+            file.tracks[0].blocks[0].epics,
+            vec!["bastion-os", "bastion-web"],
+            "multi-valued membership must survive the parse"
+        );
+
+        // Re-serialize and re-parse: the authored membership survives the exact
+        // round-trip `plan_state_json` performs on every `emit-state --write`.
+        let out = serde_json::to_string(&file).expect("serializes");
+        let again: StateFile = serde_json::from_str(&out).expect("re-parses");
+        assert_eq!(
+            again.tracks[0].blocks[0].epics,
+            vec!["bastion-os", "bastion-web"]
+        );
+        assert_eq!(again.epics[0].slug, "bastion-os");
+    }
+
+    #[test]
+    fn absent_epics_do_not_serialize_as_empty_arrays() {
+        // The whole corpus (~292 blocks) belongs to no epic today. Round-tripping
+        // a state file must not add `"epics": []` to every block / file, or the
+        // first `emit-state --write` after this schema change rewrites everything.
+        let file: StateFile = serde_json::from_str(project_fixture()).expect("parses");
+        let v = serde_json::to_value(&file).expect("serializes");
+        let obj = v.as_object().unwrap();
+
+        assert!(
+            !obj.contains_key("epics"),
+            "StateFile.epics must be omitted when empty"
+        );
+
+        let block = &v["tracks"][0]["blocks"][0];
+        assert!(
+            block.get("epics").is_none(),
+            "TrackBlock.epics must be omitted when empty, got: {block}"
+        );
+
+        let focus_now = &v["focus"]["now"][0];
+        assert!(
+            focus_now.get("epics").is_none(),
+            "Block.epics must be omitted when empty, got: {focus_now}"
+        );
+    }
+
+    #[test]
+    fn build_state_graph_carries_epic_membership_onto_nodes() {
+        let json = r#"{
+            "repo": "bastion",
+            "kind": "project",
+            "updated": "2026-07-24",
+            "tracks": [
+                {
+                    "title": "Phase 11",
+                    "blocks": [
+                        {"id": "BA.11.K", "title": "board endpoint", "status": "closed",
+                         "epics": ["bastion-os", "bastion-web"]},
+                        {"id": "BA.12.A", "title": "untagged", "status": "open"}
+                    ]
+                }
+            ]
+        }"#;
+        let file: StateFile = serde_json::from_str(json).expect("parses");
+        let src = StateSource {
+            repo_slug: "bastion".to_string(),
+            abs_path: PathBuf::from("/tmp/bastion/planning/state.json"),
+            expected_kind: "project",
+        };
+
+        let graph = build_state_graph(&[(src, file)]);
+
+        let tagged = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == "BA.11.K")
+            .expect("BA.11.K node");
+        assert_eq!(tagged.epics, vec!["bastion-os", "bastion-web"]);
+
+        let untagged = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == "BA.12.A")
+            .expect("BA.12.A node");
+        assert!(untagged.epics.is_empty());
     }
 }
