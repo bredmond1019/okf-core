@@ -6,12 +6,14 @@
 //! the frontmatter contract has exactly one source of truth across the
 //! workspace.
 
+mod doc;
 mod frontmatter;
 mod graph;
 mod graph_emit;
 mod parse;
 mod state;
 
+pub use doc::{FrontmatterValue, serialize_nested_frontmatter};
 pub use frontmatter::{OkfFrontmatter, serialize_frontmatter};
 pub use graph::{Edge, EdgeKind, EdgeResolution, Graph, GraphArtifact, Node, resolve_edge};
 pub use graph_emit::{ExportedEdge, GraphExport, build_graph_export};
