@@ -67,7 +67,7 @@ pub enum BlockedBy {
 // Block — lenient superset across now/next/blocked variants
 // ---------------------------------------------------------------------------
 
-/// One entry in a `focus.now`, `focus.next`, or `focus.blocked` array.
+/// One entry in a `focus.now`, `focus.next`, `focus.blocked`, or `focus.deferred` array.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Block {
     /// Canonical block ID. `#[serde(alias)]` keeps v1 `"block"`-keyed files readable.
@@ -75,7 +75,7 @@ pub struct Block {
     pub id: String,
     /// Brief human description.
     pub title: String,
-    /// Lifecycle status (present on `now` and `blocked` entries).
+    /// Lifecycle status (present on `now`, `blocked`, and `deferred` entries).
     #[serde(default)]
     pub status: Option<String>,
     /// Optional in-flight context note.
@@ -107,7 +107,7 @@ pub struct Block {
 // Focus
 // ---------------------------------------------------------------------------
 
-/// The `focus` object — what's now, next, and blocked in a repo.
+/// The `focus` object — what's now, next, blocked, and deferred in a repo.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Focus {
     /// Blocks currently in progress.
@@ -119,6 +119,19 @@ pub struct Focus {
     /// Blocks waiting on something.
     #[serde(default)]
     pub blocked: Vec<Block>,
+    /// Blocks deliberately parked on the back burner (authored `status: "deferred"`).
+    ///
+    /// Deferred blocks are real roadmap work that is *not* being surfaced as next.
+    /// They are excluded from ready-order (so they can never reach `next`) and do
+    /// not enter `blocked` even when they carry unmet deps — `deferred` is a
+    /// terminal lane assignment, exactly like `now`.
+    ///
+    /// Skipped when empty so the overwhelming majority of repos (which defer
+    /// nothing) do not gain a `"deferred": []` key on the next `emit-state
+    /// --write`. Dropping `skip_serializing_if` would churn every state.json in
+    /// the portfolio, because `plan_state_json` diffs pretty-printed JSON.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred: Vec<Block>,
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +145,12 @@ pub struct TrackBlock {
     pub id: String,
     /// Brief human description.
     pub title: String,
-    /// Lifecycle status (authored: `open`/`in_progress`/`closed`).
+    /// Lifecycle status (authored: `open`/`in_progress`/`deferred`/`closed`).
+    ///
+    /// `deferred` parks the block on the back burner: still real roadmap work,
+    /// still counted, but structurally unable to reach `focus.next`. It is
+    /// manual and sticky — there is no expiry date; edit it back to `open` to
+    /// resume. `blocked` remains forbidden as an authored value (it is derived).
     #[serde(default)]
     pub status: Option<String>,
     /// The block's full dependency edges (the authoritative DAG).
@@ -198,6 +216,11 @@ pub struct RepoRollup {
     /// Cached `focus.blocked` from the child.
     #[serde(default)]
     pub blocked: Vec<Block>,
+    /// Cached `focus.deferred` from the child.
+    ///
+    /// Skipped when empty for the same no-churn reason as [`Focus::deferred`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred: Vec<Block>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,6 +1124,85 @@ mod tests {
             focus_now.get("epics").is_none(),
             "Block.epics must be omitted when empty, got: {focus_now}"
         );
+    }
+
+    #[test]
+    fn absent_deferred_lane_reads_as_empty() {
+        // Every state.json in the portfolio predates the `deferred` lane. They
+        // must all still load, with the lane defaulting to empty rather than
+        // failing as a missing field.
+        let file: StateFile = serde_json::from_str(project_fixture()).expect("parses");
+        assert!(file.focus.deferred.is_empty());
+
+        let brain: StateFile = serde_json::from_str(brain_fixture()).expect("parses");
+        assert!(brain.focus.deferred.is_empty());
+        for rollup in &brain.repos {
+            assert!(
+                rollup.deferred.is_empty(),
+                "RepoRollup.deferred must default to empty for {}",
+                rollup.repo
+            );
+        }
+    }
+
+    #[test]
+    fn absent_deferred_lane_does_not_serialize_as_empty_array() {
+        // Same no-churn contract as `absent_epics_do_not_serialize_as_empty_arrays`:
+        // `plan_state_json` diffs pretty-printed JSON, so an empty lane that
+        // serializes to `"deferred": []` would rewrite every state.json in the
+        // portfolio on the first `emit-state --write` after this change.
+        let file: StateFile = serde_json::from_str(project_fixture()).expect("parses");
+        let v = serde_json::to_value(&file).expect("serializes");
+
+        let focus = &v["focus"];
+        assert!(
+            focus.get("deferred").is_none(),
+            "Focus.deferred must be omitted when empty, got: {focus}"
+        );
+
+        let brain: StateFile = serde_json::from_str(brain_fixture()).expect("parses");
+        let bv = serde_json::to_value(&brain).expect("serializes");
+        for rollup in bv["repos"].as_array().into_iter().flatten() {
+            assert!(
+                rollup.get("deferred").is_none(),
+                "RepoRollup.deferred must be omitted when empty, got: {rollup}"
+            );
+        }
+    }
+
+    #[test]
+    fn deferred_lane_round_trips_when_present() {
+        let json = r#"{
+            "repo": "mev",
+            "kind": "project",
+            "updated": "2026-07-26",
+            "focus": {
+                "deferred": [
+                    {"id": "MV.9.A", "title": "back burner thing", "status": "deferred"}
+                ]
+            },
+            "tracks": [
+                {
+                    "title": "Phase 9",
+                    "blocks": [
+                        {"id": "MV.9.A", "title": "back burner thing", "status": "deferred"}
+                    ]
+                }
+            ]
+        }"#;
+        let file: StateFile = serde_json::from_str(json).expect("parses");
+
+        assert_eq!(file.focus.deferred.len(), 1);
+        assert_eq!(file.focus.deferred[0].id, "MV.9.A");
+        assert_eq!(file.focus.deferred[0].status.as_deref(), Some("deferred"));
+        assert_eq!(
+            file.tracks[0].blocks[0].status.as_deref(),
+            Some("deferred"),
+            "`deferred` must survive as an authored track-block status"
+        );
+
+        let v = serde_json::to_value(&file).expect("serializes");
+        assert_eq!(v["focus"]["deferred"][0]["id"], "MV.9.A");
     }
 
     #[test]
