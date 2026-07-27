@@ -9,12 +9,23 @@
 //!   recovers all four `FrontmatterValue` shapes from source text, which the flat
 //!   `crate::parse` parser cannot represent.
 //!
-//! Later tasks in this spec register the generic `BrainDocModel` trait and the
-//! concrete `Opportunity` / `LearningArtifact` / `Proposal` models here as sibling
-//! sub-modules; this file is the module wiring + re-export surface they attach to.
+//! - `model`: the generic `BrainDocModel` trait, `BodySpec`/`BodySection`
+//!   (sentinel-delimited body rendering, byte-compatible with mev's
+//!   `splice_generated`), `IndexIntent`, and `render_document` — the single
+//!   deterministic write path every concrete model shares.
+//! - `slug`: `derive_slug`, the pure title -> slug function every model uses
+//!   for its `BrainDocModel::slug()`.
+//!
+//! Later tasks in this spec register the concrete `Opportunity` /
+//! `LearningArtifact` / `Proposal` models here as sibling sub-modules, proving
+//! the `BrainDocModel` abstraction against three unrelated shapes.
 
 mod frontmatter_value;
+mod model;
 mod parse_nested;
+mod slug;
 
 pub use frontmatter_value::{FrontmatterValue, serialize_nested_frontmatter};
+pub use model::{BodySection, BodySpec, BrainDocModel, IndexIntent, render_document};
 pub use parse_nested::{NestedParseError, parse_nested_frontmatter};
+pub use slug::derive_slug;
