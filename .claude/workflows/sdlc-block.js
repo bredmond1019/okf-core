@@ -482,7 +482,7 @@ final git log line (empty string if nothing was committed).
 }
 
 // Flip ONE block's authored status in this repo's planning/state.json (the graph /start-block,
-// /plan, /chore etc. all write to — see core/planning/state-schema.md). `id` is the canonical
+// /plan, /chore etc. all write to — see docs/state/state-schema.md). `id` is the canonical
 // "<Prefix>.<N>.<Letter>" id resolved during enumeration; null/empty when it couldn't be resolved
 // (a legacy heading with no brain.toml prefix) or when this repo has no state.json at all — both are
 // silent no-ops, never a hard failure, so this stays optional for repos that don't use the convention.
@@ -491,7 +491,7 @@ async function syncBlockState(id, newStatus) {
   if (!id) return
   const r = await agent(`
 You maintain this repo's planning/state.json — the authoritative work-block graph (see
-core/planning/state-schema.md for the schema; the brain root is found by walking up from CWD until
+docs/state/state-schema.md for the schema; the brain root is found by walking up from CWD until
 you find brain.toml, then planning/state.json sits in THIS repo, not the brain root). You run from the
 MAIN repo root.
 
@@ -829,9 +829,14 @@ tasksFile="${blockTasks}", taskCount, commitHash, notes.
 // Run ONE block through /sdlc-flow as the inner engine. Returns the child flow's result (or null).
 // Always passes --no-pr so the orchestrator can run the per-block gap-check before opening the PR
 // (PR mode) or skip PR creation entirely (no-pr / auto-merge modes where the orchestrator owns merging).
+// Always passes --worktree: /sdlc-flow defaults to a plain branch in the MAIN working tree, but this
+// orchestrator fans out blocks CONCURRENTLY (a wave runs up to effectiveMaxParallel children at once),
+// so each child needs its own isolated worktree — a shared main tree would collide. The worktree is
+// also what the per-block gap-check (gapCheckBlock) and PR-open run in (they read the child's
+// returned worktreePath).
 async function runBlockFlow(slug) {
-  log(`Block ${slug}: running /sdlc-flow --no-pr...`)
-  const r = await workflow('sdlc-flow', `${slug} --no-pr`)
+  log(`Block ${slug}: running /sdlc-flow --no-pr --worktree...`)
+  const r = await workflow('sdlc-flow', `${slug} --no-pr --worktree`)
   return r
 }
 

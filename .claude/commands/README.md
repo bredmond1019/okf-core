@@ -28,7 +28,7 @@ All commands live directly in `.claude/commands/` — no subdirectories (except 
 
   archive.md        capture.md       commit.md        handoff.md
   log-work.md       prime.md         session-recap.md status.md
-  wrap-up.md        update-state.md
+  wrap-up.md        update-state.md  next.md
 
   breakdown.md      chore.md         generate-master-plan.md  generate-tasks.md
   plan.md           ticket.md
@@ -50,7 +50,7 @@ All commands live directly in `.claude/commands/` — no subdirectories (except 
 
 | Group | Commands |
 |---|---|
-| Session | `/prime`, `/session-recap`, `/status`, `/handoff`, `/wrap-up`, `/log-work`, `/archive`, `/capture` |
+| Session | `/prime`, `/session-recap`, `/status`, `/next`, `/handoff`, `/wrap-up`, `/log-work`, `/archive`, `/capture` |
 | State | `/update-state` — how to safely edit `planning/state.json` per `state-schema.md` |
 | Planning | `/generate-master-plan`, `/generate-tasks`, `/plan`, `/ticket`, `/chore`, `/breakdown` |
 | SDLC | `/implement`, `/test`, `/fix`, `/patch`, `/document`, `/update-docs`, `/conditional_docs`, `/process-tasks`, `/update-task`, `/review-task`, `/review-workflow`, `/review-PR`, `/close-out` |
@@ -88,6 +88,7 @@ predictably-named output file.
 | Session Start | `/session-recap` | Briefing: recent Log entries, where you left off, next step | chat only |
 | Session Start | `/status` | Check current focus and what's in progress | chat only |
 | Session Start | `/process-tasks` | Check which specs are eligible to start | chat only |
+| Session Start | `/next` | Briefing on what's up next, blocked, and recommend next action based on goals | chat only |
 | Session End | `/wrap-up [note]` | Log work + commit; clean close without a handoff file | status.md, log.md, git |
 | Session End | `/handoff [note]` | Write handoff + log work + commit; hands off to a fresh session | `planning/handoff.md`, status.md, log.md, git |
 | Session End | `/close-out [--skip-coverage] [--no-review] [--review-level <level>] [--clean-worktree] [note]` | Verify coverage → review code → patch docs → clean worktree (opt.) → hand off; the quality-close pipeline | status.md, log.md, docs/, git |
@@ -209,7 +210,7 @@ unattended.
 |---|---|---|
 | `/sdlc-run <name> [N]` | one task or a **full spec**, sequential | none — runs on the current branch, updates STATUS/Log directly |
 | `/sdlc-task <name> N` | **one** task, parallel-safe | own git worktree; defers STATUS/Log to merge time |
-| `/sdlc-flow <name> [range]` | a **full spec** as one shared worktree, per-task test→fix loop, one end review, a PR | own worktree; terminates in a PR |
+| `/sdlc-flow <name> [range]` | a **full spec** on one shared branch, per-task test→fix loop, one end review, a PR | plain branch in the main tree (or `--worktree` for isolation); terminates in a PR |
 | `/sdlc-block [plan-file]` | a **whole roadmap** (master-plan) as a branch train — one `/sdlc-flow` per independent block, in dependency-ordered waves | each block its own worktree + PR; orchestrator owns the train branch and merges in dependency order |
 
 > **Full reference with mermaid diagrams, per-stage detail, and token usage:**
@@ -270,7 +271,7 @@ remaining, open questions, first command for the next agent), then invokes `/log
 `/commit`. `/prime` in the next session detects the handoff file and surfaces it first.
 Delete `planning/handoff.md` once the new session has consumed it.
 
-### `/close-out [--gap-check-only] [--skip-coverage] [--no-review] [--review-level <level>] [--clean-worktree] [note]`
+### `/close-out [--gap-check-only] [--skip-coverage] [--no-review] [--review-level <level>] [--clean-worktree | --merge-branch] [note]`
 Quality-close pipeline for the end of an `sdlc-run` or `sdlc-flow` session. Runs five
 steps in sequence: **(1)** the full validation suite from `planning/harness.json` — stops
 immediately if any gating check fails; **(2)** coverage gap scan — reads changed source
@@ -279,8 +280,10 @@ blocking gaps and re-runs the suite to confirm; **(2.5)** code review — runs a
 low-overhead `/code-review` check (defaults to `low`, overridden via `--review-level <level>`,
 or skipped via `--no-review`); **(3)** `/update-docs --patch`; **(4)** `/handoff` with the
 provided note (skips if `--gap-check-only` is set); **(5)** `/clean-worktree` for the current
-branch to merge and remove the worktree (only when explicitly requested via `--clean-worktree`).
-Non-blocking gaps/findings do not block the pipeline unless critical errors occur.
+branch to merge and remove the **worktree** (only when explicitly requested via `--clean-worktree`);
+**(5b)** merge the current **plain branch** into the base + `mev emit-state --write` (only via
+`--merge-branch` — the branch-mode `/sdlc-flow` analogue, no worktree to remove; mutually exclusive
+with `--clean-worktree`). Non-blocking gaps/findings do not block the pipeline unless critical errors occur.
 
 ### `/session-recap`
 Start-of-session briefing: reads the three most recent Log entries, status.md, the current
@@ -292,7 +295,7 @@ The canonical workflow for hand-editing any repo's `planning/state.json`: the au
 field boundary, which `kind` (`project` / `brain` / `portfolio`) applies and what it requires, the
 `<Prefix>.<Phase>.<Letter>` block-ID convention and what has to move in lockstep when an id is
 renamed, and the edit → validate → `mev emit-state --write` → `mev validate-brain --state`
-procedure. Points to `core/planning/state-schema.md` as the single source of truth for field
+procedure. Points to `docs/state/state-schema.md` as the single source of truth for field
 shapes rather than duplicating them. Use before any non-trivial `state.json` edit, or when another
 command's instructions say "update state.json" without repeating the mechanics.
 
@@ -313,6 +316,9 @@ user-confirmed emit. Embedded in every pipeline command.
 ### `/status`
 Reads only `planning/status.md` and reports the Current focus line, what's In progress, and
 what's Next. Read-only.
+
+### `/next`
+Show what's up next, what's blocked and by what, and recommend the next action based on local status and HQ/business/core goals. Read-only.
 
 ### `/process-tasks`
 Reads `status.md`, applies sequential eligibility rules (a spec is ready only if all specs above

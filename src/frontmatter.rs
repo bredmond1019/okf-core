@@ -122,7 +122,10 @@ fn push_list(out: &mut String, key: &str, items: &[String]) {
 
 /// Render a single scalar, double-quoting (with escaping) only when a bare plain
 /// scalar would be misparsed by YAML.
-fn yaml_scalar(value: &str) -> String {
+///
+/// `pub(crate)` so `crate::doc::frontmatter_value`'s nested serializer reuses this
+/// exact quoting policy rather than forking a second one.
+pub(crate) fn yaml_scalar(value: &str) -> String {
     if needs_quote(value) {
         let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
         format!("\"{escaped}\"")
@@ -137,7 +140,10 @@ fn yaml_scalar(value: &str) -> String {
 /// significant leading/trailing whitespace, YAML indicator/structural/comment
 /// characters, values YAML would coerce to bool/null, and values that parse as a
 /// number (so `title: "1.0"` stays a string rather than a float).
-fn needs_quote(v: &str) -> bool {
+///
+/// `pub(crate)` so `crate::doc::frontmatter_value`'s nested serializer reuses this
+/// exact quoting policy rather than forking a second one.
+pub(crate) fn needs_quote(v: &str) -> bool {
     if v.is_empty() {
         // Empty scalars are emitted as a bare `key:` by the caller, never quoted.
         return false;

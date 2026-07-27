@@ -67,7 +67,7 @@ pub enum BlockedBy {
 // Block — lenient superset across now/next/blocked variants
 // ---------------------------------------------------------------------------
 
-/// One entry in a `focus.now`, `focus.next`, or `focus.blocked` array.
+/// One entry in a `focus.now`, `focus.next`, `focus.blocked`, or `focus.deferred` array.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Block {
     /// Canonical block ID. `#[serde(alias)]` keeps v1 `"block"`-keyed files readable.
@@ -75,7 +75,7 @@ pub struct Block {
     pub id: String,
     /// Brief human description.
     pub title: String,
-    /// Lifecycle status (present on `now` and `blocked` entries).
+    /// Lifecycle status (present on `now`, `blocked`, and `deferred` entries).
     #[serde(default)]
     pub status: Option<String>,
     /// Optional in-flight context note.
@@ -93,13 +93,21 @@ pub struct Block {
     /// Target due date or timing string (e.g. "2026-07-15").
     #[serde(default)]
     pub due: Option<String>,
+    /// Cross-repo epic membership (slugs into the HQ `epics[]` registry).
+    ///
+    /// Carried on focus/rollup entries so a derived brain focus keeps membership
+    /// without a second join back to `tracks[]`. Skipped when empty so the
+    /// overwhelming majority of blocks (which belong to no epic) do not gain an
+    /// `"epics": []` key on the next `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
 // Focus
 // ---------------------------------------------------------------------------
 
-/// The `focus` object — what's now, next, and blocked in a repo.
+/// The `focus` object — what's now, next, blocked, and deferred in a repo.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Focus {
     /// Blocks currently in progress.
@@ -111,6 +119,19 @@ pub struct Focus {
     /// Blocks waiting on something.
     #[serde(default)]
     pub blocked: Vec<Block>,
+    /// Blocks deliberately parked on the back burner (authored `status: "deferred"`).
+    ///
+    /// Deferred blocks are real roadmap work that is *not* being surfaced as next.
+    /// They are excluded from ready-order (so they can never reach `next`) and do
+    /// not enter `blocked` even when they carry unmet deps — `deferred` is a
+    /// terminal lane assignment, exactly like `now`.
+    ///
+    /// Skipped when empty so the overwhelming majority of repos (which defer
+    /// nothing) do not gain a `"deferred": []` key on the next `emit-state
+    /// --write`. Dropping `skip_serializing_if` would churn every state.json in
+    /// the portfolio, because `plan_state_json` diffs pretty-printed JSON.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred: Vec<Block>,
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +145,12 @@ pub struct TrackBlock {
     pub id: String,
     /// Brief human description.
     pub title: String,
-    /// Lifecycle status (authored: `open`/`in_progress`/`closed`).
+    /// Lifecycle status (authored: `open`/`in_progress`/`deferred`/`closed`).
+    ///
+    /// `deferred` parks the block on the back burner: still real roadmap work,
+    /// still counted, but structurally unable to reach `focus.next`. It is
+    /// manual and sticky — there is no expiry date; edit it back to `open` to
+    /// resume. `blocked` remains forbidden as an authored value (it is derived).
     #[serde(default)]
     pub status: Option<String>,
     /// The block's full dependency edges (the authoritative DAG).
@@ -148,6 +174,15 @@ pub struct TrackBlock {
     /// Preferred model for automation (e.g. "opus").
     #[serde(default)]
     pub model: Option<String>,
+    /// Cross-repo epic membership — zero or more slugs into the HQ `epics[]`
+    /// registry. Multi-valued because a block can genuinely serve two
+    /// initiatives at once (e.g. an API endpoint used by two Surfaces).
+    ///
+    /// Authored. Validated against the registry by mev
+    /// (`E_STATE_UNKNOWN_EPIC`). Skipped when empty so untagged blocks stay
+    /// byte-identical across an `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
 }
 
 /// One phase/wave entry in a leaf repo's `tracks[]`.
@@ -181,6 +216,11 @@ pub struct RepoRollup {
     /// Cached `focus.blocked` from the child.
     #[serde(default)]
     pub blocked: Vec<Block>,
+    /// Cached `focus.deferred` from the child.
+    ///
+    /// Skipped when empty for the same no-churn reason as [`Focus::deferred`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred: Vec<Block>,
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +267,42 @@ pub struct TierEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Epic — HQ `epics[]` cross-repo initiative registry
+// ---------------------------------------------------------------------------
+
+/// One entry in the HQ brain's `epics[]` registry — a cross-repo initiative
+/// that groups blocks spanning several repos.
+///
+/// The registry is **HQ-only** (same precedent as `backlog[]`, D2): it is the
+/// closed vocabulary a block's `epics[]` membership is validated against, so a
+/// typo is an error rather than a silently-empty board. Membership itself is
+/// authored on the blocks, not listed here — `repos` is only a human hint.
+///
+/// Epic-to-epic relationships are **derived** from the block `depends_on`
+/// graph, never authored here: an epic-level `depends_on` would duplicate truth
+/// the block graph already holds.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct Epic {
+    /// Stable kebab-case key — the value blocks reference in their `epics[]`.
+    pub slug: String,
+    /// Human-readable name (e.g. `"Bastion OS"`).
+    pub title: String,
+    /// One-line description of what the initiative covers.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Lifecycle: `active` · `paused` · `complete`.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Repo-relative path to the owning master-plan / plan doc, when one exists.
+    #[serde(default)]
+    pub plan: Option<String>,
+    /// Repos the initiative is expected to touch. An authored hint for readers —
+    /// **not** the source of truth (that's the blocks' own `epics[]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Origin — backlog→block promotion provenance (v2)
 // ---------------------------------------------------------------------------
 
@@ -240,12 +316,30 @@ pub struct Origin {
     pub slug: String,
 }
 
+/// Provenance pointer on a **backlog node** — where the node itself came from.
+///
+/// Distinct from [`Origin`], which lives on a *block* and records which backlog
+/// idea the block was promoted from (block→backlog). `BacklogOrigin` points the
+/// other direction: it records whether a backlog node was a hand-authored
+/// `/backlog-ticket` (`"backlog"`) or a promoted `/capture` note (`"capture"`).
+/// `kind == "capture"` is the lane classifier for the Attention board's
+/// "orphaned captures" sub-lane.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct BacklogOrigin {
+    /// Origin kind — `"capture"` or `"backlog"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Path to the pre-plan `notes.md`, when `kind == "capture"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Backlog — HQ queued-ideas graph node (v2)
 // ---------------------------------------------------------------------------
 
 /// One entry in the HQ brain `backlog[]` — a queued idea as a graph node.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Backlog {
     /// Stable node key (the notes-dir slug).
     pub slug: String,
@@ -267,6 +361,20 @@ pub struct Backlog {
     /// Path to the pre-plan notes doc.
     #[serde(default)]
     pub notes: Option<String>,
+    /// Where this node came from — a hand-authored ticket or a `/capture` note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<BacklogOrigin>,
+    /// Date recorded (`YYYY-MM-DD`). The staleness clock's anchor — a node with
+    /// no `created` cannot age (kept `Option` for back-compat; backfilled).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Last "keep / re-affirm" disposition date — a full staleness-clock reset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed: Option<String>,
+    /// Short-term "hide until" date, written by `/snooze`. Suppressed from the
+    /// Attention board + warnings while `today < snoozed_until`, regardless of age.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -301,8 +409,16 @@ pub struct Carryover {
     /// Human-readable condition under which this entry should be deleted.
     #[serde(default)]
     pub clears_when: Option<String>,
-    /// Date recorded (YYYY-MM-DD).
+    /// Date recorded (`YYYY-MM-DD` or full RFC3339).
     pub created: String,
+    /// Last "keep / re-affirm" disposition date — a full staleness-clock reset.
+    /// Staleness age is measured from `max(created, reviewed)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed: Option<String>,
+    /// Short-term "hide until" date, written by `/snooze`. Suppressed from the
+    /// Attention board + warnings while `today < snoozed_until`, regardless of age.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +453,12 @@ pub struct StateFile {
     /// Tier pointers (HQ brain only).
     #[serde(default)]
     pub tiers: Vec<TierEntry>,
+    /// Cross-repo initiative registry (HQ brain only; empty elsewhere).
+    ///
+    /// Skipped when empty so every non-HQ file stays byte-identical across an
+    /// `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<Epic>,
     /// Optional top-level annotation note (seen in HQ state.json).
     #[serde(default)]
     pub note: Option<String>,
@@ -432,6 +554,11 @@ pub struct StateNode {
     pub id: String,
     /// Brief human description.
     pub title: String,
+    /// Cross-repo epic membership, copied from the authoring `TrackBlock`, so
+    /// graph consumers (and the emitted graph artifact) can filter by
+    /// initiative without re-reading every `state.json`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
     /// Absolute path of the file that registered this block (skipped in JSON).
     #[serde(skip)]
     pub source_path: PathBuf,
@@ -478,6 +605,7 @@ pub fn build_state_graph(files: &[(StateSource, StateFile)]) -> StateGraph {
                     repo: src.repo_slug.clone(),
                     id: block.id.clone(),
                     title: block.title.clone(),
+                    epics: block.epics.clone(),
                     source_path: path.clone(),
                 });
 
@@ -835,5 +963,286 @@ mod tests {
         let reparsed: StateFile = serde_json::from_value(round.clone()).unwrap();
         let reserialized = serde_json::to_value(&reparsed).unwrap();
         assert_eq!(round, reserialized);
+    }
+
+    #[test]
+    fn attention_fields_roundtrip_and_omit_when_absent() {
+        // Backlog + carryover carrying the new attention fields parse fully...
+        let json = r#"{
+            "repo": "hq",
+            "kind": "brain",
+            "updated": "2026-07-15",
+            "backlog": [
+                {
+                    "slug": "tailscale-rag-db",
+                    "title": "Tailscale RAG DB",
+                    "repo": "core",
+                    "type": "research",
+                    "status": "idea",
+                    "created": "2026-06-16",
+                    "origin": {"type": "capture", "notes": "core/planning/tailscale-rag-db/notes.md"},
+                    "reviewed": "2026-07-10",
+                    "snoozed_until": "2026-07-20"
+                }
+            ],
+            "carryover": [
+                {
+                    "slug": "cortex-rename",
+                    "scope": {"cross_repo": true},
+                    "kind": "deferred",
+                    "text": "rename mev to cortex",
+                    "created": "2026-07-05T07:10:00-03:00",
+                    "reviewed": "2026-07-12"
+                }
+            ]
+        }"#;
+        let file: StateFile = serde_json::from_str(json).unwrap();
+        let bl = &file.backlog[0];
+        assert_eq!(bl.created.as_deref(), Some("2026-06-16"));
+        assert_eq!(bl.reviewed.as_deref(), Some("2026-07-10"));
+        assert_eq!(bl.snoozed_until.as_deref(), Some("2026-07-20"));
+        let origin = bl.origin.as_ref().expect("origin present");
+        assert_eq!(origin.kind, "capture");
+        assert_eq!(
+            origin.notes.as_deref(),
+            Some("core/planning/tailscale-rag-db/notes.md")
+        );
+        assert_eq!(file.carryover[0].reviewed.as_deref(), Some("2026-07-12"));
+
+        // ...and when the new fields are absent they must NOT serialize as `null`
+        // (skip_serializing_if), so first `emit-state --write` adds no noise.
+        let bare = Backlog {
+            slug: "x".to_string(),
+            title: "X".to_string(),
+            repo: "core".to_string(),
+            kind: "feature".to_string(),
+            status: "idea".to_string(),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&bare).unwrap();
+        let obj = v.as_object().unwrap();
+        assert!(
+            !obj.contains_key("origin"),
+            "origin must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("created"),
+            "created must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("reviewed"),
+            "reviewed must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("snoozed_until"),
+            "snoozed_until must be omitted when None"
+        );
+    }
+
+    // -- epics ---------------------------------------------------------------
+
+    #[test]
+    fn epics_round_trip_on_blocks_and_registry() {
+        let json = r#"{
+            "repo": "hq",
+            "kind": "brain",
+            "updated": "2026-07-24",
+            "epics": [
+                {
+                    "slug": "bastion-os",
+                    "title": "Bastion OS",
+                    "description": "The five-layer practice OS",
+                    "status": "active",
+                    "plan": "core/planning/master-plan.md",
+                    "repos": ["bastion", "mev"]
+                }
+            ],
+            "tracks": [
+                {
+                    "title": "Phase 1",
+                    "blocks": [
+                        {
+                            "id": "HQ.1.A",
+                            "title": "shared block",
+                            "status": "open",
+                            "epics": ["bastion-os", "bastion-web"]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let file: StateFile = serde_json::from_str(json).expect("parses");
+
+        assert_eq!(file.epics.len(), 1);
+        let epic = &file.epics[0];
+        assert_eq!(epic.slug, "bastion-os");
+        assert_eq!(epic.title, "Bastion OS");
+        assert_eq!(epic.status.as_deref(), Some("active"));
+        assert_eq!(epic.plan.as_deref(), Some("core/planning/master-plan.md"));
+        assert_eq!(epic.repos, vec!["bastion", "mev"]);
+
+        assert_eq!(
+            file.tracks[0].blocks[0].epics,
+            vec!["bastion-os", "bastion-web"],
+            "multi-valued membership must survive the parse"
+        );
+
+        // Re-serialize and re-parse: the authored membership survives the exact
+        // round-trip `plan_state_json` performs on every `emit-state --write`.
+        let out = serde_json::to_string(&file).expect("serializes");
+        let again: StateFile = serde_json::from_str(&out).expect("re-parses");
+        assert_eq!(
+            again.tracks[0].blocks[0].epics,
+            vec!["bastion-os", "bastion-web"]
+        );
+        assert_eq!(again.epics[0].slug, "bastion-os");
+    }
+
+    #[test]
+    fn absent_epics_do_not_serialize_as_empty_arrays() {
+        // The whole corpus (~292 blocks) belongs to no epic today. Round-tripping
+        // a state file must not add `"epics": []` to every block / file, or the
+        // first `emit-state --write` after this schema change rewrites everything.
+        let file: StateFile = serde_json::from_str(project_fixture()).expect("parses");
+        let v = serde_json::to_value(&file).expect("serializes");
+        let obj = v.as_object().unwrap();
+
+        assert!(
+            !obj.contains_key("epics"),
+            "StateFile.epics must be omitted when empty"
+        );
+
+        let block = &v["tracks"][0]["blocks"][0];
+        assert!(
+            block.get("epics").is_none(),
+            "TrackBlock.epics must be omitted when empty, got: {block}"
+        );
+
+        let focus_now = &v["focus"]["now"][0];
+        assert!(
+            focus_now.get("epics").is_none(),
+            "Block.epics must be omitted when empty, got: {focus_now}"
+        );
+    }
+
+    #[test]
+    fn absent_deferred_lane_reads_as_empty() {
+        // Every state.json in the portfolio predates the `deferred` lane. They
+        // must all still load, with the lane defaulting to empty rather than
+        // failing as a missing field.
+        let file: StateFile = serde_json::from_str(project_fixture()).expect("parses");
+        assert!(file.focus.deferred.is_empty());
+
+        let brain: StateFile = serde_json::from_str(brain_fixture()).expect("parses");
+        assert!(brain.focus.deferred.is_empty());
+        for rollup in &brain.repos {
+            assert!(
+                rollup.deferred.is_empty(),
+                "RepoRollup.deferred must default to empty for {}",
+                rollup.repo
+            );
+        }
+    }
+
+    #[test]
+    fn absent_deferred_lane_does_not_serialize_as_empty_array() {
+        // Same no-churn contract as `absent_epics_do_not_serialize_as_empty_arrays`:
+        // `plan_state_json` diffs pretty-printed JSON, so an empty lane that
+        // serializes to `"deferred": []` would rewrite every state.json in the
+        // portfolio on the first `emit-state --write` after this change.
+        let file: StateFile = serde_json::from_str(project_fixture()).expect("parses");
+        let v = serde_json::to_value(&file).expect("serializes");
+
+        let focus = &v["focus"];
+        assert!(
+            focus.get("deferred").is_none(),
+            "Focus.deferred must be omitted when empty, got: {focus}"
+        );
+
+        let brain: StateFile = serde_json::from_str(brain_fixture()).expect("parses");
+        let bv = serde_json::to_value(&brain).expect("serializes");
+        for rollup in bv["repos"].as_array().into_iter().flatten() {
+            assert!(
+                rollup.get("deferred").is_none(),
+                "RepoRollup.deferred must be omitted when empty, got: {rollup}"
+            );
+        }
+    }
+
+    #[test]
+    fn deferred_lane_round_trips_when_present() {
+        let json = r#"{
+            "repo": "mev",
+            "kind": "project",
+            "updated": "2026-07-26",
+            "focus": {
+                "deferred": [
+                    {"id": "MV.9.A", "title": "back burner thing", "status": "deferred"}
+                ]
+            },
+            "tracks": [
+                {
+                    "title": "Phase 9",
+                    "blocks": [
+                        {"id": "MV.9.A", "title": "back burner thing", "status": "deferred"}
+                    ]
+                }
+            ]
+        }"#;
+        let file: StateFile = serde_json::from_str(json).expect("parses");
+
+        assert_eq!(file.focus.deferred.len(), 1);
+        assert_eq!(file.focus.deferred[0].id, "MV.9.A");
+        assert_eq!(file.focus.deferred[0].status.as_deref(), Some("deferred"));
+        assert_eq!(
+            file.tracks[0].blocks[0].status.as_deref(),
+            Some("deferred"),
+            "`deferred` must survive as an authored track-block status"
+        );
+
+        let v = serde_json::to_value(&file).expect("serializes");
+        assert_eq!(v["focus"]["deferred"][0]["id"], "MV.9.A");
+    }
+
+    #[test]
+    fn build_state_graph_carries_epic_membership_onto_nodes() {
+        let json = r#"{
+            "repo": "bastion",
+            "kind": "project",
+            "updated": "2026-07-24",
+            "tracks": [
+                {
+                    "title": "Phase 11",
+                    "blocks": [
+                        {"id": "BA.11.K", "title": "board endpoint", "status": "closed",
+                         "epics": ["bastion-os", "bastion-web"]},
+                        {"id": "BA.12.A", "title": "untagged", "status": "open"}
+                    ]
+                }
+            ]
+        }"#;
+        let file: StateFile = serde_json::from_str(json).expect("parses");
+        let src = StateSource {
+            repo_slug: "bastion".to_string(),
+            abs_path: PathBuf::from("/tmp/bastion/planning/state.json"),
+            expected_kind: "project",
+        };
+
+        let graph = build_state_graph(&[(src, file)]);
+
+        let tagged = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == "BA.11.K")
+            .expect("BA.11.K node");
+        assert_eq!(tagged.epics, vec!["bastion-os", "bastion-web"]);
+
+        let untagged = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == "BA.12.A")
+            .expect("BA.12.A node");
+        assert!(untagged.epics.is_empty());
     }
 }
