@@ -13,7 +13,9 @@ mod graph_emit;
 mod parse;
 mod state;
 
-pub use doc::{FrontmatterValue, serialize_nested_frontmatter};
+pub use doc::{
+    FrontmatterValue, NestedParseError, parse_nested_frontmatter, serialize_nested_frontmatter,
+};
 pub use frontmatter::{OkfFrontmatter, serialize_frontmatter};
 pub use graph::{Edge, EdgeKind, EdgeResolution, Graph, GraphArtifact, Node, resolve_edge};
 pub use graph_emit::{ExportedEdge, GraphExport, build_graph_export};
