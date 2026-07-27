@@ -18,19 +18,29 @@
 //! - `opportunity`: `Opportunity` — the full model for the
 //!   `business/docs/opportunities/index.md` contract, plus `Contact`/`Action`
 //!   and the `CompanyBrief`/`ProspectingResult` constructors.
+//! - `learning_artifact`: `LearningArtifact` — a sketched model over the
+//!   engine-rs content-pipeline payload (`{artifact_id, channel_type,
+//!   source_ref, summary, digest_markdown, entities, language}`).
+//! - `proposal`: `Proposal` — a sketched model over the engine-rs
+//!   `AutomationRoadmap` deliverable (`{situation, candidates, top_profiles,
+//!   recommendation}`), carried as a JSON body section.
 //!
-//! Later tasks in this spec register the `LearningArtifact` / `Proposal`
-//! sketch models here as sibling sub-modules, proving the `BrainDocModel`
-//! abstraction against three unrelated shapes.
+//! `LearningArtifact` and `Proposal` are the two additional shapes that prove
+//! the `BrainDocModel` abstraction generalizes beyond `Opportunity` — the
+//! whole point of `OK.2.A`.
 
 mod frontmatter_value;
+mod learning_artifact;
 mod model;
 mod opportunity;
 mod parse_nested;
+mod proposal;
 mod slug;
 
 pub use frontmatter_value::{FrontmatterValue, serialize_nested_frontmatter};
+pub use learning_artifact::{LearningArtifact, LearningArtifactError};
 pub use model::{BodySection, BodySpec, BrainDocModel, IndexIntent, render_document};
 pub use opportunity::{Action, Contact, Opportunity, OpportunityError};
 pub use parse_nested::{NestedParseError, parse_nested_frontmatter};
+pub use proposal::{Proposal, ProposalError};
 pub use slug::derive_slug;
