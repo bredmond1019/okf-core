@@ -15,17 +15,22 @@
 //!   deterministic write path every concrete model shares.
 //! - `slug`: `derive_slug`, the pure title -> slug function every model uses
 //!   for its `BrainDocModel::slug()`.
+//! - `opportunity`: `Opportunity` — the full model for the
+//!   `business/docs/opportunities/index.md` contract, plus `Contact`/`Action`
+//!   and the `CompanyBrief`/`ProspectingResult` constructors.
 //!
-//! Later tasks in this spec register the concrete `Opportunity` /
-//! `LearningArtifact` / `Proposal` models here as sibling sub-modules, proving
-//! the `BrainDocModel` abstraction against three unrelated shapes.
+//! Later tasks in this spec register the `LearningArtifact` / `Proposal`
+//! sketch models here as sibling sub-modules, proving the `BrainDocModel`
+//! abstraction against three unrelated shapes.
 
 mod frontmatter_value;
 mod model;
+mod opportunity;
 mod parse_nested;
 mod slug;
 
 pub use frontmatter_value::{FrontmatterValue, serialize_nested_frontmatter};
 pub use model::{BodySection, BodySpec, BrainDocModel, IndexIntent, render_document};
+pub use opportunity::{Action, Contact, Opportunity, OpportunityError};
 pub use parse_nested::{NestedParseError, parse_nested_frontmatter};
 pub use slug::derive_slug;

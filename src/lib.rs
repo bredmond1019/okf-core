@@ -14,8 +14,9 @@ mod parse;
 mod state;
 
 pub use doc::{
-    BodySection, BodySpec, BrainDocModel, FrontmatterValue, IndexIntent, NestedParseError,
-    derive_slug, parse_nested_frontmatter, render_document, serialize_nested_frontmatter,
+    Action, BodySection, BodySpec, BrainDocModel, Contact, FrontmatterValue, IndexIntent,
+    NestedParseError, Opportunity, OpportunityError, derive_slug, parse_nested_frontmatter,
+    render_document, serialize_nested_frontmatter,
 };
 pub use frontmatter::{OkfFrontmatter, serialize_frontmatter};
 pub use graph::{Edge, EdgeKind, EdgeResolution, Graph, GraphArtifact, Node, resolve_edge};
