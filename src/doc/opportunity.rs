@@ -20,10 +20,10 @@ use super::frontmatter_value::FrontmatterValue;
 use super::model::{BodySection, BodySpec, BrainDocModel, IndexIntent};
 use super::slug::derive_slug;
 
-/// A single enriched contact channel for an opportunity. Briefs from
-/// `RESEARCH_AGENT` carry no contact data — `contacts` starts empty and is
-/// enriched separately (see the contract in
-/// `business/docs/opportunities/index.md`).
+/// A single enriched contact channel for an opportunity. `contacts` starts
+/// empty and is populated by the `RESEARCH_AGENT` merge-contacts step
+/// (engine-rs `EN.4.E`, `mev::doc::opportunity::plan_merge_contacts`) — see
+/// the contract in `business/docs/opportunities/index.md`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Contact {
     pub name: String,
@@ -103,12 +103,16 @@ impl Opportunity {
     pub fn from_company_brief(brief: &JsonValue) -> Self {
         let title = json_str(brief, "company_name");
         let description = json_str(brief, "summary");
+        let url = json_str_opt(brief, "company_url");
+        let links = json_str_array_deduped(brief, "sources");
         Self {
             title,
             description,
             kind: Some("company".to_string()),
             stage: Some("identified".to_string()),
             layer: vec!["business".to_string()],
+            url,
+            links,
             research_brief: brief.clone(),
             ..Self::default()
         }
@@ -130,12 +134,14 @@ impl Opportunity {
         } else {
             format!("RESEARCH_AGENT prospecting sweep — {vertical}.")
         };
+        let links = json_str_array_deduped(result, "sources");
         Self {
             title,
             description,
             kind: Some("prospecting-sweep".to_string()),
             stage: Some("identified".to_string()),
             layer: vec!["business".to_string()],
+            links,
             research_brief: result.clone(),
             ..Self::default()
         }
@@ -334,6 +340,37 @@ fn json_str(v: &JsonValue, key: &str) -> String {
         .to_string()
 }
 
+/// Read a string field, returning `None` when absent or blank (after
+/// trimming) rather than an empty string.
+fn json_str_opt(v: &JsonValue, key: &str) -> Option<String> {
+    v.get(key).and_then(JsonValue::as_str).and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+/// Read an array field of strings, skipping non-string/blank entries and
+/// deduping while preserving first-seen order.
+fn json_str_array_deduped(v: &JsonValue, key: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    v.get(key)
+        .and_then(JsonValue::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(JsonValue::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .filter(|s| seen.insert(s.to_string()))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn scalar_opt(v: Option<&FrontmatterValue>) -> Option<String> {
     match v {
         Some(FrontmatterValue::Scalar(s)) if !s.is_empty() => Some(s.clone()),
@@ -508,6 +545,62 @@ actions:
     }
 
     #[test]
+    fn from_company_brief_lifts_company_url_and_sources() {
+        let brief = serde_json::json!({
+            "company_name": "Acme Corp",
+            "summary": "Widget manufacturer expanding into SaaS.",
+            "company_url": "https://acme.example.com",
+            "sources": [
+                "https://acme.example.com/about",
+                "https://news.example.com/acme-raises-b",
+                "https://acme.example.com/about",
+            ],
+        });
+        let o = Opportunity::from_company_brief(&brief);
+        assert_eq!(o.url.as_deref(), Some("https://acme.example.com"));
+        assert_eq!(
+            o.links,
+            vec![
+                "https://acme.example.com/about".to_string(),
+                "https://news.example.com/acme-raises-b".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn from_company_brief_absent_company_url_and_sources_leave_defaults() {
+        let brief = serde_json::json!({
+            "company_name": "Acme Corp",
+            "summary": "Widget manufacturer expanding into SaaS.",
+        });
+        let o = Opportunity::from_company_brief(&brief);
+        assert_eq!(o.url, None);
+        assert!(o.links.is_empty());
+    }
+
+    #[test]
+    fn from_company_brief_blank_company_url_stays_none() {
+        let brief = serde_json::json!({
+            "company_name": "Acme Corp",
+            "summary": "D",
+            "company_url": "   ",
+        });
+        let o = Opportunity::from_company_brief(&brief);
+        assert_eq!(o.url, None);
+    }
+
+    #[test]
+    fn from_company_brief_non_string_and_blank_source_entries_skipped() {
+        let brief = serde_json::json!({
+            "company_name": "Acme Corp",
+            "summary": "D",
+            "sources": ["https://acme.example.com", 42, "", "   ", null, "https://acme.example.com"],
+        });
+        let o = Opportunity::from_company_brief(&brief);
+        assert_eq!(o.links, vec!["https://acme.example.com".to_string()]);
+    }
+
+    #[test]
     fn from_prospecting_result_sets_kind_title_and_brief() {
         let result = serde_json::json!({
             "vertical": "legal-tech",
@@ -519,6 +612,27 @@ actions:
         assert_eq!(o.title, "legal-tech — Prospecting Sweep");
         assert_eq!(o.kind.as_deref(), Some("prospecting-sweep"));
         assert_eq!(o.research_brief, result);
+    }
+
+    #[test]
+    fn from_prospecting_result_lifts_sources_into_links_deduped() {
+        let result = serde_json::json!({
+            "vertical": "legal-tech",
+            "prospects": [],
+            "sources": [
+                "https://legaltech.example.com/directory",
+                "https://legaltech.example.com/directory",
+                "https://news.example.com/legal-tech-report",
+            ],
+        });
+        let o = Opportunity::from_prospecting_result(&result);
+        assert_eq!(
+            o.links,
+            vec![
+                "https://legaltech.example.com/directory".to_string(),
+                "https://news.example.com/legal-tech-report".to_string(),
+            ]
+        );
     }
 
     // ── Round-trip ───────────────────────────────────────────────────────────
