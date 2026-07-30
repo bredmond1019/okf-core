@@ -74,6 +74,14 @@ pub struct Opportunity {
     pub last_contact: Option<String>,
     pub next_action: Option<String>,
     pub research_ref: Option<String>,
+    /// Domain-specific claims the model could not tie to a fetched source
+    /// (engine-rs `EN.4.G`, `research_agent/schema.rs`'s
+    /// `needs_further_research`). Always emitted, empty when nothing is
+    /// flagged — a flagged claim is kept, not deleted, and an empty list is
+    /// the correct answer for a fully-grounded brief. `validation_required`
+    /// is deliberately not a stored field here; see
+    /// [`Opportunity::validation_required`].
+    pub needs_further_research: Vec<String>,
     pub contacts: Vec<Contact>,
     pub actions: Vec<Action>,
     /// Free-form body prose rendered before the `## Research Brief` heading
@@ -95,6 +103,13 @@ impl Opportunity {
             .unwrap_or_else(|| format!("opportunity-{}", self.slug()))
     }
 
+    /// Whether a human still needs to validate at least one flagged claim —
+    /// always derived from `needs_further_research`, never independently
+    /// settable, so a document cannot contradict its own list.
+    pub fn validation_required(&self) -> bool {
+        !self.needs_further_research.is_empty()
+    }
+
     /// Build an `Opportunity` from an engine-rs `CompanyBrief` JSON value
     /// (`{company_name, summary, recent_developments[], pain_points[],
     /// outreach_hooks[], sources[]}`, `research_agent/schema.rs`). The raw
@@ -105,6 +120,7 @@ impl Opportunity {
         let description = json_str(brief, "summary");
         let url = json_str_opt(brief, "company_url");
         let links = json_str_array_deduped(brief, "sources");
+        let needs_further_research = json_str_array_deduped(brief, "needs_further_research");
         Self {
             title,
             description,
@@ -113,6 +129,7 @@ impl Opportunity {
             layer: vec!["business".to_string()],
             url,
             links,
+            needs_further_research,
             research_brief: brief.clone(),
             ..Self::default()
         }
@@ -135,6 +152,7 @@ impl Opportunity {
             format!("RESEARCH_AGENT prospecting sweep — {vertical}.")
         };
         let links = json_str_array_deduped(result, "sources");
+        let needs_further_research = needs_further_research_union(result);
         Self {
             title,
             description,
@@ -142,6 +160,7 @@ impl Opportunity {
             stage: Some("identified".to_string()),
             layer: vec!["business".to_string()],
             links,
+            needs_further_research,
             research_brief: result.clone(),
             ..Self::default()
         }
@@ -183,6 +202,15 @@ impl Opportunity {
         let last_contact = scalar_opt(get("last_contact"));
         let next_action = scalar_opt(get("next_action"));
         let research_ref = scalar_opt(get("research_ref"));
+        // `validation_required` (if present in the source) is intentionally
+        // never read here — it is always re-derived from
+        // `needs_further_research` (see `Opportunity::validation_required`),
+        // so a stale value in the frontmatter cannot leak into the model.
+        let needs_further_research = match get("needs_further_research") {
+            Some(FrontmatterValue::BlockList(items)) => items.clone(),
+            Some(FrontmatterValue::InlineList(items)) => items.clone(),
+            _ => Vec::new(),
+        };
         let contacts = match get("contacts") {
             Some(FrontmatterValue::MapList(entries)) => entries
                 .iter()
@@ -212,6 +240,7 @@ impl Opportunity {
             last_contact,
             next_action,
             research_ref,
+            needs_further_research,
             contacts,
             actions,
             body_prose: None,
@@ -283,6 +312,14 @@ impl BrainDocModel for Opportunity {
                 FrontmatterValue::Scalar(v.clone()),
             ));
         }
+        fields.push((
+            "needs_further_research".to_string(),
+            FrontmatterValue::BlockList(self.needs_further_research.clone()),
+        ));
+        fields.push((
+            "validation_required".to_string(),
+            FrontmatterValue::Scalar(self.validation_required().to_string()),
+        ));
         fields.push((
             "contacts".to_string(),
             FrontmatterValue::MapList(self.contacts.iter().map(Contact::to_entry).collect()),
@@ -369,6 +406,29 @@ fn json_str_array_deduped(v: &JsonValue, key: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Resolve the sweep-level `needs_further_research` for a `ProspectingResult`
+/// value: prefer a top-level `needs_further_research` key when the result
+/// already carries one (engine-rs `EN.4.G` stamps the order-stable, deduped
+/// union there), otherwise compute the same union across `prospects[]`
+/// ourselves so a bare `ProspectingResult` still round-trips correctly.
+fn needs_further_research_union(result: &JsonValue) -> Vec<String> {
+    if result.get("needs_further_research").is_some() {
+        return json_str_array_deduped(result, "needs_further_research");
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    if let Some(prospects) = result.get("prospects").and_then(JsonValue::as_array) {
+        for prospect in prospects {
+            for claim in json_str_array_deduped(prospect, "needs_further_research") {
+                if seen.insert(claim.clone()) {
+                    out.push(claim);
+                }
+            }
+        }
+    }
+    out
 }
 
 fn scalar_opt(v: Option<&FrontmatterValue>) -> Option<String> {
@@ -468,6 +528,7 @@ mod tests {
             last_contact: Some("2026-07-25".to_string()),
             next_action: Some("Send outreach email".to_string()),
             research_ref: Some("engine-rs-research-runs".to_string()),
+            needs_further_research: vec![],
             contacts: vec![],
             actions: vec![Action {
                 at: "2026-07-25".to_string(),
@@ -502,12 +563,44 @@ links:
 last_contact: 2026-07-25
 next_action: Send outreach email
 research_ref: engine-rs-research-runs
+needs_further_research: []
+validation_required: \"false\"
 contacts: []
 actions:
   - { at: 2026-07-25, kind: research, note: Generated brief }
 ---
 ";
         assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn populated_needs_further_research_renders_as_block_list_with_validation_required_true() {
+        let mut o = full();
+        o.needs_further_research = vec![
+            "FAR/DFARS compliance regime claimed but not sourced".to_string(),
+            "Brazilian local-LLM data-residency claim unverified".to_string(),
+        ];
+        let out = super::super::frontmatter_value::serialize_nested_frontmatter(&o.frontmatter());
+        assert!(out.contains(
+            "needs_further_research:\n  - FAR/DFARS compliance regime claimed but not sourced\n  - Brazilian local-LLM data-residency claim unverified\n"
+        ));
+        assert!(out.contains("validation_required: \"true\"\n"));
+    }
+
+    #[test]
+    fn empty_needs_further_research_renders_present_empty_list_with_validation_required_false() {
+        let o = full();
+        let out = super::super::frontmatter_value::serialize_nested_frontmatter(&o.frontmatter());
+        assert!(out.contains("needs_further_research: []\n"));
+        assert!(out.contains("validation_required: \"false\"\n"));
+    }
+
+    #[test]
+    fn validation_required_is_derived_never_independently_set() {
+        let mut o = full();
+        assert!(!o.validation_required());
+        o.needs_further_research = vec!["claim".to_string()];
+        assert!(o.validation_required());
     }
 
     #[test]
@@ -601,6 +694,42 @@ actions:
     }
 
     #[test]
+    fn from_company_brief_maps_needs_further_research_deduped() {
+        let brief = serde_json::json!({
+            "company_name": "Acme Corp",
+            "summary": "D",
+            "needs_further_research": [
+                "FAR/DFARS compliance regime claimed but not sourced",
+                "FAR/DFARS compliance regime claimed but not sourced",
+                "Brazilian local-LLM data-residency claim unverified",
+            ],
+        });
+        let o = Opportunity::from_company_brief(&brief);
+        assert_eq!(
+            o.needs_further_research,
+            vec![
+                "FAR/DFARS compliance regime claimed but not sourced".to_string(),
+                "Brazilian local-LLM data-residency claim unverified".to_string(),
+            ]
+        );
+        assert!(o.validation_required());
+        // Existing fields stay unchanged.
+        assert_eq!(o.title, "Acme Corp");
+        assert_eq!(o.kind.as_deref(), Some("company"));
+    }
+
+    #[test]
+    fn from_company_brief_absent_needs_further_research_is_empty() {
+        let brief = serde_json::json!({
+            "company_name": "Acme Corp",
+            "summary": "D",
+        });
+        let o = Opportunity::from_company_brief(&brief);
+        assert!(o.needs_further_research.is_empty());
+        assert!(!o.validation_required());
+    }
+
+    #[test]
     fn from_prospecting_result_sets_kind_title_and_brief() {
         let result = serde_json::json!({
             "vertical": "legal-tech",
@@ -635,6 +764,67 @@ actions:
         );
     }
 
+    #[test]
+    fn from_prospecting_result_prefers_stamped_top_level_union() {
+        let result = serde_json::json!({
+            "vertical": "legal-tech",
+            "prospects": [
+                {"needs_further_research": ["stale, per-lead only"]},
+            ],
+            "needs_further_research": [
+                "FAR/DFARS compliance regime claimed but not sourced",
+                "Brazilian local-LLM data-residency claim unverified",
+            ],
+        });
+        let o = Opportunity::from_prospecting_result(&result);
+        assert_eq!(
+            o.needs_further_research,
+            vec![
+                "FAR/DFARS compliance regime claimed but not sourced".to_string(),
+                "Brazilian local-LLM data-residency claim unverified".to_string(),
+            ]
+        );
+        assert!(o.validation_required());
+    }
+
+    #[test]
+    fn from_prospecting_result_computes_union_across_prospects_deduped_when_unstamped() {
+        let result = serde_json::json!({
+            "vertical": "legal-tech",
+            "prospects": [
+                {"needs_further_research": ["FAR/DFARS compliance regime claimed but not sourced"]},
+                {"needs_further_research": [
+                    "FAR/DFARS compliance regime claimed but not sourced",
+                    "Brazilian local-LLM data-residency claim unverified",
+                ]},
+                {"needs_further_research": []},
+            ],
+        });
+        let o = Opportunity::from_prospecting_result(&result);
+        assert_eq!(
+            o.needs_further_research,
+            vec![
+                "FAR/DFARS compliance regime claimed but not sourced".to_string(),
+                "Brazilian local-LLM data-residency claim unverified".to_string(),
+            ]
+        );
+        assert!(o.validation_required());
+    }
+
+    #[test]
+    fn from_prospecting_result_no_flags_anywhere_is_empty() {
+        let result = serde_json::json!({
+            "vertical": "legal-tech",
+            "prospects": [
+                {"needs_further_research": []},
+                {},
+            ],
+        });
+        let o = Opportunity::from_prospecting_result(&result);
+        assert!(o.needs_further_research.is_empty());
+        assert!(!o.validation_required());
+    }
+
     // ── Round-trip ───────────────────────────────────────────────────────────
 
     #[test]
@@ -651,6 +841,52 @@ actions:
         let mut expected = o;
         expected.doc_id = Some(expected.effective_doc_id());
         assert_eq!(recovered, expected);
+    }
+
+    #[test]
+    fn from_frontmatter_of_parsed_render_equals_original_with_populated_needs_further_research() {
+        let mut o = full();
+        o.needs_further_research = vec![
+            "FAR/DFARS compliance regime claimed but not sourced".to_string(),
+            "Brazilian local-LLM data-residency claim unverified".to_string(),
+        ];
+        let rendered =
+            super::super::frontmatter_value::serialize_nested_frontmatter(&o.frontmatter());
+        let parsed = parse_nested_frontmatter(&rendered).expect("must parse");
+        let recovered = Opportunity::from_frontmatter(&parsed).expect("must reconstruct");
+
+        let mut expected = o;
+        expected.doc_id = Some(expected.effective_doc_id());
+        assert_eq!(recovered, expected);
+        assert!(recovered.validation_required());
+    }
+
+    #[test]
+    fn stale_validation_required_true_alongside_empty_list_reads_back_derived_false() {
+        // A document whose frontmatter carries a stale `validation_required:
+        // true` next to an empty `needs_further_research:` must read back
+        // derived-false — the stored scalar is never trusted, only the list.
+        let fields = vec![
+            (
+                "title".to_string(),
+                FrontmatterValue::Scalar("Test Co".to_string()),
+            ),
+            (
+                "description".to_string(),
+                FrontmatterValue::Scalar("D".to_string()),
+            ),
+            (
+                "needs_further_research".to_string(),
+                FrontmatterValue::BlockList(vec![]),
+            ),
+            (
+                "validation_required".to_string(),
+                FrontmatterValue::Scalar("true".to_string()),
+            ),
+        ];
+        let recovered = Opportunity::from_frontmatter(&fields).expect("must reconstruct");
+        assert!(recovered.needs_further_research.is_empty());
+        assert!(!recovered.validation_required());
     }
 
     #[test]
