@@ -217,7 +217,7 @@ See `tasks.json` in this directory — the task list is defined there, not here.
 
 ## Validation Commands
 ```
-<the project's validation commands — see `planning/harness.json` (`validation.checks[]`) or CLAUDE.md; one command per line, in order>
+<the project's PER-TASK validation commands — one line per `planning/harness.json` → `validation.checks[]` entry (or CLAUDE.md if harness.json has none), in order. For each check that has a `fastCommand`, use `fastCommand` here, not `command` — this block is what every non-final task in this spec runs for its scoped, fast signal. The final Validate task below restates the full authoritative `command` for each check separately; the two are NOT the same list when any check defines a `fastCommand`.>
 ```
 <!-- Add any spec-specific checks above the standard project checks. -->
 
@@ -236,13 +236,22 @@ plus two additive fields (`files`, `dependsOn`) orchestrator ignores harmlessly:
 [
   { "task_id": 1, "title": "<Foundational step>", "description": "<bulleted actions, one string>", "acceptance_criteria": [], "validation_commands": [], "max_attempts": 3, "files": ["<path/to/file>"], "dependsOn": [] },
   { "task_id": 2, "title": "<Next step>", "description": "<bulleted actions, one string>", "acceptance_criteria": [], "validation_commands": [], "max_attempts": 3, "files": ["<path/to/file>"], "dependsOn": [1] },
-  { "task_id": "N", "title": "Validate", "description": "Run the Validation Commands listed below and confirm all pass.", "acceptance_criteria": [], "validation_commands": [], "max_attempts": 3, "files": [], "dependsOn": [1, 2] }
+  { "task_id": "N", "title": "Validate", "description": "Run the FULL validation suite and confirm all pass: <one line per `validation.checks[]` entry using its authoritative `command` — NEVER `fastCommand` — this is the one task in the spec that owns the real, unscoped gate>.", "acceptance_criteria": [], "validation_commands": ["<full `command` per validation.checks[] entry, in order>"], "max_attempts": 3, "files": [], "dependsOn": [1, 2] }
 ]
 ```
 `task_id` — 1-indexed integers, dependency-ordered, no gaps (the `"N"` above is illustrative — use
 the real next integer). `title`/`description` — required; `description` holds what a `### N.`
 heading's bullets used to hold (bulleted lines in one string are fine). `acceptance_criteria` /
-`validation_commands` — usually `[]`; the spec-level markdown sections stay authoritative.
+`validation_commands` — `[]` for any task that touches source the project's checks compile or lint;
+the spec-level markdown sections stay authoritative for those. **Set it for a task that CANNOT break
+the build** — docs-only, config-only, fixture-only — with the cheap commands that actually verify
+that task (file exists, frontmatter present, index updated). `/sdlc-flow` and `/sdlc-task` run those
+commands INSTEAD of the project-wide gating checks for that task, so a markdown edit stops paying
+for a full compile; the end review still re-runs the full gating suite over the integrated tree, so
+nothing escapes validation. In compile-expensive stacks this is the single cheapest win available
+at authoring time — a docs task in a Rust workspace can otherwise cost minutes per attempt to
+validate a paragraph. Example:
+`"validation_commands": ["test -f docs/thing.md", "grep -q '^type:' docs/thing.md", "grep -q 'thing.md' docs/index.md"]`
 `max_attempts` — defaults to 3, only set per-task to override. `files` — every task but the final
 Validate task needs ≥1 entry. `dependsOn` — ids that must complete first; the final Validate task
 depends on every other id.
