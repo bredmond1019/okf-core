@@ -290,9 +290,22 @@ pub struct Epic {
     /// One-line description of what the initiative covers.
     #[serde(default)]
     pub description: Option<String>,
-    /// Lifecycle: `active` · `paused` · `complete`.
+    /// Lifecycle: `active` · `focused` · `paused` · `complete`.
     #[serde(default)]
     pub status: Option<String>,
+    /// Authored importance, `0..=100` — consumed by bastion-web's what-next
+    /// ranking as one term of its score.
+    ///
+    /// Range validation lives in mev's `check_epics` (`E_STATE_EPIC_BAD_WEIGHT`),
+    /// not here: okf-core holds data structs, not policy. `u8` therefore permits
+    /// values above 100 at the type level on purpose.
+    ///
+    /// Absent means "consumer default" (bastion-web currently falls back to 60) —
+    /// deliberately **not** `Default`-valued, so absent stays distinguishable
+    /// from an authored `0`. `skip_serializing_if` keeps untagged epics
+    /// byte-identical across a re-emit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<u8>,
     /// Repo-relative path to the owning master-plan / plan doc, when one exists.
     #[serde(default)]
     pub plan: Option<String>,
@@ -1097,6 +1110,51 @@ mod tests {
             vec!["bastion-os", "bastion-web"]
         );
         assert_eq!(again.epics[0].slug, "bastion-os");
+    }
+
+    /// Parse a one-epic HQ registry from an inline epic object body.
+    fn epic_from(body: &str) -> (Epic, serde_json::Value) {
+        let json =
+            format!(r#"{{"repo":"hq","kind":"brain","updated":"2026-08-01","epics":[{body}]}}"#);
+        let file: StateFile = serde_json::from_str(&json).expect("parses");
+        let out = serde_json::to_value(&file).expect("serializes");
+        let epic_json = out["epics"][0].clone();
+        (file.epics.into_iter().next().expect("one epic"), epic_json)
+    }
+
+    #[test]
+    fn epic_without_weight_round_trips_without_the_key() {
+        // The no-churn contract: the ~13 existing registry entries author no
+        // weight, so `emit-state --write` must not add `"weight"` to any of them.
+        let (epic, json) = epic_from(r#"{"slug":"brain-quality","title":"Brain Quality"}"#);
+        assert_eq!(epic.weight, None);
+        assert!(
+            json.get("weight").is_none(),
+            "Epic.weight must be omitted when absent, got: {json}"
+        );
+    }
+
+    #[test]
+    fn epic_weight_zero_round_trips_as_zero() {
+        // Absent and zero must stay distinguishable — hence no `Default` value.
+        let (epic, json) = epic_from(r#"{"slug":"parked","title":"Parked","weight":0}"#);
+        assert_eq!(epic.weight, Some(0));
+        assert_eq!(json.get("weight"), Some(&serde_json::json!(0)));
+    }
+
+    #[test]
+    fn epic_weight_round_trips_in_range() {
+        let (epic, json) = epic_from(r#"{"slug":"bastion-os","title":"Bastion OS","weight":100}"#);
+        assert_eq!(epic.weight, Some(100));
+        assert_eq!(json.get("weight"), Some(&serde_json::json!(100)));
+    }
+
+    #[test]
+    fn epic_weight_above_100_still_deserializes() {
+        // Range is mev's `check_epics` (E_STATE_EPIC_BAD_WEIGHT), not serde's:
+        // okf-core holds data structs, not policy.
+        let (epic, _) = epic_from(r#"{"slug":"loud","title":"Loud","weight":200}"#);
+        assert_eq!(epic.weight, Some(200));
     }
 
     #[test]
