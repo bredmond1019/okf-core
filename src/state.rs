@@ -162,6 +162,26 @@ pub struct TrackBlock {
     /// Backlog-promotion provenance, when this block came from a backlog item.
     #[serde(default)]
     pub origin: Option<Origin>,
+    /// Free-form authored annotation on the block — why it is in this state, what
+    /// evidence set its status, or a caveat a future reader needs.
+    ///
+    /// `docs/state/state-schema.md` has always listed `note?` as an authored field on
+    /// track blocks, but this struct omitted it, so every `mev emit-state --write` that
+    /// re-serialized a `state.json` silently deleted every note in it. That is a
+    /// destructive round-trip on a field the schema documents as authored, and
+    /// `scripts/routine.sh` runs `emit-state --write` unattended on cron — so notes were
+    /// being erased with no one watching. Found 2026-08-03 while backfilling 38 historical
+    /// blocks whose whole value was the provenance recorded in exactly this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Longer human-facing description of the block, for surfaces that have room to
+    /// render more than `title` — bastion-web's board being the first consumer.
+    ///
+    /// Distinct from `note`: `note` is an operator annotation about *state* ("closed
+    /// because X shipped"), `description` is a fuller statement of *what the block is*.
+    /// Both are authored and optional; neither is derived.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Execution priority (e.g. 1, 2, 3).
     #[serde(default)]
     pub priority: Option<u8>,
