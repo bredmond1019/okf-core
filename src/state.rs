@@ -149,7 +149,11 @@ pub struct Focus {
 // ---------------------------------------------------------------------------
 
 /// One block entry inside a `tracks[]` phase/wave.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+///
+/// Derives `Default` so downstream consumers construct this with
+/// `..Default::default()`, naming only the fields they care about — a future
+/// field addition here is then non-breaking for every such call site.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct TrackBlock {
     /// Canonical block ID.
     pub id: String,
@@ -233,7 +237,11 @@ pub struct TrackBlock {
 }
 
 /// One phase/wave entry in a leaf repo's `tracks[]`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+///
+/// Derives `Default` so downstream consumers construct this with
+/// `..Default::default()`, naming only the fields they care about — a future
+/// field addition here is then non-breaking for every such call site.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Track {
     /// Phase or wave name.
     pub title: String,
@@ -331,7 +339,11 @@ pub struct TierEntry {
 /// Epic-to-epic relationships are **derived** from the block `depends_on`
 /// graph, never authored here: an epic-level `depends_on` would duplicate truth
 /// the block graph already holds.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+///
+/// Derives `Default` so downstream consumers construct this with
+/// `..Default::default()`, naming only the fields they care about — a future
+/// field addition here is then non-breaking for every such call site.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct Epic {
     /// Stable kebab-case key — the value blocks reference in their `epics[]`.
     pub slug: String,
@@ -451,7 +463,10 @@ pub struct Backlog {
 // ---------------------------------------------------------------------------
 
 /// The scope of a `carryover[]` entry.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+///
+/// Derives `Default` as a prerequisite for [`Carryover`], whose `scope` field
+/// is a non-`Option` `CarryoverScope`.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct CarryoverScope {
     #[serde(default)]
     pub repo: Option<String>,
@@ -462,7 +477,11 @@ pub struct CarryoverScope {
 }
 
 /// A durable caveat, known issue, environmental note, or deferred follow-on.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+///
+/// Derives `Default` so downstream consumers construct this with
+/// `..Default::default()`, naming only the fields they care about — a future
+/// field addition here is then non-breaking for every such call site.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Carryover {
     /// Stable node key.
     pub slug: String,
@@ -502,7 +521,14 @@ pub struct Carryover {
 /// Both leaf (`kind:"project"`) and brain (`kind:"brain"`) variants are covered.
 /// All optional collections default to empty; extra unknown fields are
 /// tolerated (no `deny_unknown_fields`).
-#[derive(Debug, Clone, Deserialize, Serialize)]
+///
+/// Derives `Default` so downstream consumers construct this with
+/// `..Default::default()`, naming only the fields they care about — a future
+/// field addition here is then non-breaking for every such call site.
+/// `StateFile::default()` yields `repo: ""`, `kind: ""`, `updated: ""` — not a
+/// meaningful state document; the derive exists for call-site ergonomics, not
+/// to produce a valid document.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct StateFile {
     /// Repo slug identifying this file's owner.
     pub repo: String,
