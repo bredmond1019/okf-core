@@ -108,6 +108,16 @@ pub struct Block {
 // ---------------------------------------------------------------------------
 
 /// The `focus` object — what's now, next, blocked, and deferred in a repo.
+///
+/// `Focus` and its sibling derived views (`Block`, `RepoRollup`, `CrossRepoEdge`)
+/// deliberately do **not** carry an unknown-field capture map, unlike the six
+/// authored structs (`StateFile`, `Track`, `TrackBlock`, `Backlog`, `Epic`,
+/// `Carryover`). Derived views are regenerated wholesale on every
+/// `mev emit-state --write` run from the authored data, not hand-edited —
+/// preserving a stale unknown key here would *resurrect* data a prior run
+/// intentionally dropped, rather than protect authored data from being lost.
+/// The asymmetry is deliberate: capture belongs only on the structs a human
+/// actually writes into `state.json` by hand.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Focus {
     /// Blocks currently in progress.
@@ -203,6 +213,23 @@ pub struct TrackBlock {
     /// byte-identical across an `emit-state --write`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub epics: Vec<String>,
+    /// Unmodeled fields, captured whole so an authored key this struct does
+    /// not (yet) know about survives a deserialize→serialize round-trip
+    /// instead of being silently dropped.
+    ///
+    /// This is the fix for the concrete incident where `TrackBlock` omitted
+    /// `note` (which `docs/state/state-schema.md` has always documented as an
+    /// authored field): every `mev emit-state --write` re-serialization
+    /// silently deleted every note in the file, unattended, because
+    /// `scripts/routine.sh` runs that command on cron. With this capture map,
+    /// a stale binary that has never heard of a field cannot delete it —
+    /// nothing ever tries to parse the field away, it just rides along in
+    /// `extra`. Same whole-object property as qm's `durable-map.ts`, which
+    /// stores each record as a whole JSONB object and reads it back as `T`
+    /// with no field-by-field deserialization (see
+    /// `agentic-portfolio/planning/qm-comparison-findings/notes.md` §7(g)).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One phase/wave entry in a leaf repo's `tracks[]`.
@@ -213,6 +240,9 @@ pub struct Track {
     /// Ordered blocks in this phase.
     #[serde(default)]
     pub blocks: Vec<TrackBlock>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +363,9 @@ pub struct Epic {
     /// **not** the source of truth (that's the blocks' own `epics[]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<String>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +441,9 @@ pub struct Backlog {
     /// Attention board + warnings while `today < snoozed_until`, regardless of age.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<String>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +488,9 @@ pub struct Carryover {
     /// Attention board + warnings while `today < snoozed_until`, regardless of age.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<String>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +540,9 @@ pub struct StateFile {
     /// Durable caveats and follow-ons.
     #[serde(default)]
     pub carryover: Vec<Carryover>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -679,24 +721,46 @@ pub fn build_state_graph(files: &[(StateSource, StateFile)]) -> StateGraph {
 mod tests {
     use super::*;
 
+    // Both fixtures below are written *complete*: every field the structs
+    // model is present explicitly (as a value, `null`, or `[]`), matching
+    // exactly what serializing a parsed `StateFile` back out would produce.
+    // This is deliberate, not incidental — `original == round` (see the
+    // round-trip tests below) can only hold for fields *without*
+    // `skip_serializing_if` if the original already carries them, because
+    // those fields always serialize (Rust's `Option<T>` emits `null` for
+    // `None`, `Vec<T>` emits `[]` for empty, absent `skip_serializing_if`).
+    // Only the small set of fields the structs annotate with
+    // `skip_serializing_if` (`epics`, `note`/`description` on `TrackBlock`,
+    // `reviewed`, `snoozed_until`, `weight`, `deferred`, …) are genuinely
+    // omittable — those are left out here on purpose, to also exercise that
+    // they stay absent.
     fn project_fixture() -> &'static str {
         r#"{
             "repo": "bastion",
             "kind": "project",
             "updated": "2026-07-01",
+            "note": null,
             "focus": {
                 "now": [
-                    {"id": "BA.15.12", "title": "okf-core convergence", "status": "in_progress"}
+                    {
+                        "id": "BA.15.12", "title": "okf-core convergence",
+                        "status": "in_progress", "note": null, "repo": null,
+                        "blocked_by": [], "priority": null, "due": null
+                    }
                 ],
                 "next": [
-                    {"id": "BA.15.13", "title": "next thing"}
+                    {
+                        "id": "BA.15.13", "title": "next thing",
+                        "status": null, "note": null, "repo": null,
+                        "blocked_by": [], "priority": null, "due": null
+                    }
                 ],
                 "blocked": [
                     {
-                        "id": "BA.16.A",
-                        "title": "blocked thing",
+                        "id": "BA.16.A", "title": "blocked thing",
+                        "status": null, "note": null, "repo": null, "priority": null, "due": null,
                         "blocked_by": [
-                            {"type": "block", "repo": "mev", "id": "MV.3.P"},
+                            {"type": "block", "repo": "mev", "id": "MV.3.P", "what": null},
                             {"type": "external", "what": "waiting on infra"}
                         ]
                     }
@@ -711,20 +775,31 @@ mod tests {
                             "title": "okf-core convergence",
                             "status": "in_progress",
                             "depends_on": [
-                                {"type": "block", "repo": "mev", "id": "MV.3.P"},
+                                {"type": "block", "repo": "mev", "id": "MV.3.P", "what": null},
                                 {"type": "external", "what": "waiting on infra"}
                             ],
-                            "wave": 1
+                            "wave": 1,
+                            "origin": null,
+                            "priority": null,
+                            "due": null,
+                            "sdlc_workflow": null,
+                            "model": null
                         }
                     ]
                 }
             ],
+            "repos": [],
+            "cross_repo": [],
+            "tiers": [],
+            "backlog": [],
             "carryover": [
                 {
                     "slug": "ba15-12-mev-context-seed",
-                    "scope": {"repo": "bastion"},
+                    "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
                     "kind": "deferred",
                     "text": "seed mev context",
+                    "related": [],
+                    "clears_when": null,
                     "created": "2026-06-20"
                 }
             ]
@@ -736,6 +811,10 @@ mod tests {
             "repo": "hq",
             "kind": "brain",
             "updated": "2026-07-01",
+            "note": null,
+            "focus": {"now": [], "next": [], "blocked": []},
+            "tracks": [],
+            "backlog": [],
             "repos": [
                 {"repo": "bastion", "tier": "core", "now": [], "next": [], "blocked": []},
                 {"repo": "mev", "tier": "core", "now": [], "next": [], "blocked": []}
@@ -749,7 +828,8 @@ mod tests {
             ],
             "tiers": [
                 {"tier": "core", "rollup": "core/status.md", "summary": "on track"}
-            ]
+            ],
+            "carryover": []
         }"#
     }
 
@@ -759,12 +839,14 @@ mod tests {
         let round: serde_json::Value = serde_json::to_value(&file).unwrap();
         let original: serde_json::Value = serde_json::from_str(project_fixture()).unwrap();
 
-        // Re-parse the round-tripped value back into a StateFile and re-serialize
-        // to confirm fidelity of the model (field-for-field), rather than a raw
-        // string diff (key order / whitespace are not part of the contract).
-        let reparsed: StateFile = serde_json::from_value(round.clone()).unwrap();
-        let reserialized = serde_json::to_value(&reparsed).unwrap();
-        assert_eq!(round, reserialized);
+        // The assertion that matters: the model's re-serialization against the
+        // JSON as it was actually parsed from disk. Comparing `round` to
+        // `reserialized` (model vs. model) is a blind spot — any field the
+        // struct does not model is dropped identically on both sides, so that
+        // comparison can never detect a dropped field. Comparing `serde_json::Value`
+        // (not strings) is deliberate: key order and whitespace are not part of
+        // the contract, and `Value`'s map equality is order-independent.
+        assert_eq!(original, round);
 
         assert_eq!(file.repo, "bastion");
         assert_eq!(file.kind, "project");
@@ -772,14 +854,19 @@ mod tests {
         assert_eq!(file.focus.now[0].id, "BA.15.12");
         assert_eq!(file.tracks[0].blocks[0].depends_on.len(), 2);
         assert_eq!(file.carryover[0].slug, "ba15-12-mev-context-seed");
-
-        // Sanity: original parses too (both are valid StateFile JSON).
-        let _: StateFile = serde_json::from_value(original).unwrap();
     }
 
     #[test]
     fn load_state_brain_fixture() {
         let file: StateFile = serde_json::from_str(brain_fixture()).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+        let original: serde_json::Value = serde_json::from_str(brain_fixture()).unwrap();
+
+        // Same original-vs-round coverage as the project fixture above, so the
+        // brain variant (repos/cross_repo/tiers shape) is also protected against
+        // a silently-dropped field.
+        assert_eq!(original, round);
+
         assert_eq!(file.repos.len(), 2);
         assert_eq!(file.cross_repo.len(), 1);
         assert_eq!(file.tiers.len(), 1);

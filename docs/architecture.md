@@ -243,6 +243,67 @@ hole that twice deleted authored `TrackBlock.note` values (2026-08-02, 2026-08-0
 - All doc-reading I/O lives in `tests/`, never in `src/` — okf-core stays a pure, no-I/O leaf
   library; this gate adds no new entry to `[dependencies]`.
 
+## Whole-object state preservation (authored vs. derived)
+
+The six **authored** `src/state.rs` structs — `StateFile`, `Track`, `TrackBlock`, `Backlog`,
+`Epic`, `Carryover` — each carry an unknown-field capture map:
+
+```rust
+#[serde(flatten, default)]
+pub extra: serde_json::Map<String, serde_json::Value>,
+```
+
+This gives them the **whole-object property**: any key present in a `state.json` file that the
+struct does not (yet) model rides through a deserialize→serialize round-trip unchanged, landing
+in `extra` instead of being silently dropped. A stale binary that has never heard of a field —
+because it predates that field, or because the field was accidentally deleted from the struct —
+can no longer destroy the value; it merely fails to give it a typed accessor. The property holds
+**by construction**, not by auditing every call site that mutates or re-serializes a `StateFile`.
+
+This closes three real incidents, all caused by the same silent-drop mechanism: the dropped
+`TrackBlock.note` (2026-08-02); mev's `derive_rollup` dropping a repo from two rollups; and the
+2026-08-03 recurrence where a stale binary destroyed 29 authored notes in one unattended
+`emit-state --write` run via `scripts/routine.sh` on cron.
+
+### The derived views deliberately do NOT get this
+
+`Focus`, `Block`, `RepoRollup`, and `CrossRepoEdge` are regenerated wholesale on every run — they
+have no `extra` capture map, and a stray key on one of them is dropped on round-trip rather than
+preserved (`derived_views_do_not_preserve_unknowns` in `tests/state_preservation.rs` pins this).
+This asymmetry is deliberate, not an oversight: preserving a stale unknown key on a *derived*
+view would **resurrect deleted data** the next time the view is regenerated, which is the
+opposite of the safety property this block adds. Authored data is protected by never being
+silently dropped; derived data is protected by always being freshly computed. Do not "helpfully"
+make this uniform — see the reasoning documented alongside `Focus` in `src/state.rs`.
+
+### Interaction with the OK.3.A schema/struct conformance gate
+
+Before this block, `tests/support/struct_probe.rs`'s `struct_has_field` decided a documented
+field was present on a struct by checking whether a synthetic value survived a
+deserialize→serialize round-trip. Once the `extra` capture map exists, an *unmodeled* field also
+survives that round-trip (it rides in `extra`), so the same probe would report every documented
+field as present and `schema_struct_conformance` would pass **vacuously** — quiet, but no longer
+actually checking anything.
+
+The fix is a test-only `HasExtra` trait implemented for the six authored structs
+(`fn extra(&self) -> &serde_json::Map<String, serde_json::Value>`). `struct_has_field` now checks
+`!parsed.extra().contains_key(field)` first: if the probed name shows up in `extra`, the struct
+has no typed field for it, full stop, regardless of what the round-trip alone would suggest. **A
+future reader who removes the `HasExtra` check (e.g. while "simplifying" the probe back down to a
+pure round-trip) will silently make the OK.3.A conformance gate vacuous again** — it will keep
+passing while no longer detecting a deleted authored field. If you touch `struct_probe.rs`,
+re-run the manual mutation check: delete a field such as `TrackBlock::note`, confirm
+`schema_struct_conformance` still FAILS with `` documented field `note` ... has no corresponding
+field on struct `TrackBlock` ``, then restore it.
+
+### Scope: model only, not the writer
+
+okf-core owns the **model** half of this property only — the guarantee that a `StateFile` value
+in memory round-trips without loss. It does not gain file writing or revision history; that stays
+in mev's `emit-state --write` as a follow-on block (append-only writes / never-overwrite-in-place),
+which keeps this change inside okf-core's no-I/O, no-path-deps invariant. That mev-side writer is
+still outstanding.
+
 ## See also
 
 - [`../README.md`](../README.md) — crate overview, consumers, dependencies
