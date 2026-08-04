@@ -19,6 +19,21 @@
 
 use serde_json::{Value, json};
 
+/// Implemented by every authored struct that carries an `extra` capture map
+/// (`#[serde(flatten, default)] pub extra: serde_json::Map<String, Value>`).
+///
+/// Needed because the capture map changes what "round-trips" means for this
+/// probe: with `extra` present, an UNMODELED field also survives a
+/// deserialize→serialize round-trip (it rides along in `extra`), so
+/// round-tripping alone can no longer distinguish a real typed field from a
+/// captured one — every documented field would report PRESENT and
+/// `schema_struct_conformance` would pass vacuously. Checking
+/// `parsed.extra().contains_key(field)` after the round-trip restores that
+/// distinction: a field that landed in the capture map has no typed field.
+pub trait HasExtra {
+    fn extra(&self) -> &serde_json::Map<String, Value>;
+}
+
 /// Map a doc Shape column value to a plausible synthetic JSON value.
 /// Shapes carry a trailing `?` for "optional" — stripped before matching.
 ///
@@ -62,7 +77,7 @@ fn synthetic_value(shape: &str) -> Value {
 /// it's just typed differently than our synthetic guess.
 pub fn struct_has_field<T>(seed: Value, field: &str, shape: &str) -> bool
 where
-    T: serde::Serialize + serde::de::DeserializeOwned,
+    T: serde::Serialize + serde::de::DeserializeOwned + HasExtra,
 {
     let mut obj = match seed {
         Value::Object(map) => map,
@@ -78,12 +93,57 @@ where
         Err(_) => return true,
     };
 
+    // With the whole-object capture map, an unmodeled field ALSO survives a
+    // round-trip (it rides along in `extra`), so round-tripping alone can no
+    // longer tell a typed field from a captured one. If the probed name
+    // landed in `extra`, the struct has NO typed field for it — report
+    // ABSENT regardless of what the re-serialized JSON contains.
+    if parsed.extra().contains_key(field) {
+        return false;
+    }
+
     let round_tripped =
         serde_json::to_value(&parsed).expect("re-serializing a successfully-deserialized value");
 
     match round_tripped {
         Value::Object(map) => map.contains_key(field),
         other => panic!("expected struct to serialize to a JSON object, got {other:?}"),
+    }
+}
+
+impl HasExtra for okf_core::StateFile {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
+    }
+}
+
+impl HasExtra for okf_core::Track {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
+    }
+}
+
+impl HasExtra for okf_core::TrackBlock {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
+    }
+}
+
+impl HasExtra for okf_core::Backlog {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
+    }
+}
+
+impl HasExtra for okf_core::Epic {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
+    }
+}
+
+impl HasExtra for okf_core::Carryover {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
     }
 }
 

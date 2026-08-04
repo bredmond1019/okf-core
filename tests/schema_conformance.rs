@@ -25,7 +25,7 @@ use support::schema_doc::read_schema_doc;
 use support::schema_parse::{
     DocumentedField, is_derived, parse_derived_fields, parse_field_tables,
 };
-use support::struct_probe::struct_has_field;
+use support::struct_probe::{HasExtra, struct_has_field};
 
 /// Whether a parsed section heading (which may carry trailing qualifiers,
 /// e.g. `` `backlog[]` (HQ brain only — authored) ``) is the section this
@@ -89,7 +89,7 @@ fn check_struct<T>(
     struct_name: &str,
     violations: &mut Vec<String>,
 ) where
-    T: serde::Serialize + serde::de::DeserializeOwned,
+    T: serde::Serialize + serde::de::DeserializeOwned + HasExtra,
 {
     for field in fields {
         if is_derived(&field.name, derived) {
