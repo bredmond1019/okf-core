@@ -12,6 +12,39 @@ timestamp: "2026-07-05T16:32:00-03:00"
 
 # Log
 
+## [run: 2026-08-03]
+
+Completed OK.3.A — the schema-to-struct conformance check — across tasks 1-6 of
+`/sdlc-flow 3.1-schema-struct-conformance`, ending in a PASS review. Task 1 added
+`tests/support/schema_doc.rs` (`locate_schema_doc()`/`read_schema_doc()`), a worktree-safe upward
+search from `CARGO_MANIFEST_DIR` for `docs/state/state-schema.md` with an `OKF_STATE_SCHEMA_DOC` env
+override and fail-closed panic if the doc isn't found. Task 2 added `tests/support/schema_parse.rs`,
+a std-only markdown parser that extracts `DocumentedField` rows from the schema doc's pipe tables
+(skipping JSON template fences) and the authored-vs-derived field set. Task 3 added
+`tests/support/struct_probe.rs`, a serde round-trip probe (`struct_has_field<T>`) that detects
+whether a struct carries a named field — the exact mechanism behind the historical `TrackBlock.note`
+data-loss bug. Task 4 wired these into `tests/schema_conformance.rs`, the cargo-test gate that fails
+when a documented authored field (Block vocabulary / `backlog[]` / `epics[]` / `carryover[]`) has no
+corresponding struct field on `TrackBlock`/`Backlog`/`Epic`/`Carryover`, with a derived-field
+exemption test; it also fixed a false-positive in the task-3 probe where an empty `[]` synthetic
+array round-tripped invisibly through `skip_serializing_if = "Vec::is_empty"` fields. Task 5
+documented the gate in `docs/architecture.md`. Task 6 ran the full validation suite (fmt, clippy -D
+warnings, test, build --release) over the integrated tree, confirming no new dependency and no new
+I/O in `src/`. Notable decisions: source of truth is the pipe tables, not the JSON template fences
+(the fences omit `note` entirely and would have stayed green through the live bug); manual
+note-deletion verification of the failure message was performed via a temporary `src/state.rs` edit,
+confirmed byte-identical restore, never committed. Next: OK.3.B — append-only, whole-object writes
+for the unattended state.json/OKF cron writers, now unblocked by this gate.
+
+```
+ffe9179 feat: implement 3.1-schema-struct-conformance-task5
+03b95f5 feat: implement 3.1-schema-struct-conformance-task4
+a9a742f feat: implement 3.1-schema-struct-conformance-task3
+3e88533 feat: implement 3.1-schema-struct-conformance-task2
+357a808 feat: implement 3.1-schema-struct-conformance-task1
+a1235d4 chore: init worktree 3.1-schema-struct-conformance-flow
+```
+
 ## [run: 2026-07-27]
 
 Completed OK.2.A — the typed `BrainDocModel` layer + nested-frontmatter serializer/parser — across

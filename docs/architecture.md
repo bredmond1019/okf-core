@@ -207,6 +207,42 @@ cargo test
 cargo build --release
 ```
 
+## Schema/struct conformance gate
+
+`tests/schema_conformance.rs` (support modules in `tests/support/`) closes the silent data-loss
+hole that twice deleted authored `TrackBlock.note` values (2026-08-02, 2026-08-03): it fails
+`cargo test` when a field documented as **authored** in the brain's
+`docs/state/state-schema.md` pipe tables has no corresponding field on the matching
+`src/state.rs` struct.
+
+- **Compares:** the brain's `docs/state/state-schema.md` pipe tables (parsed by
+  `tests/support/schema_parse.rs`) against `src/state.rs` structs, probed by round-tripping a
+  synthetic value through each struct's `Serialize`/`Deserialize` impl
+  (`tests/support/struct_probe.rs`) — a field with no struct counterpart is silently dropped by
+  serde on deserialize, which is exactly the historical data-loss mechanism, so the probe tests
+  the real failure mode rather than a proxy for it. Four sections are checked, matched by
+  leading identifier: `Block vocabulary` → `TrackBlock`, `` backlog[] `` → `Backlog`, `` epics[]
+  `` → `Epic`, `` carryover[] `` → `Carryover`.
+- **Pipe tables, not JSON template fences:** the doc's `tracks[].blocks[]` template fence omits
+  `note`/`description` entirely, so a fence-driven check would have been green throughout the
+  live bug. Only the `## Block vocabulary (shared, authored)` pipe table declares the full
+  14-field set, so that is the sole source the check parses; the fences are ignored.
+  `tests/support/schema_parse.rs` skips fenced code blocks while walking the doc.
+- **Authored/derived exemption:** `docs/state/state-schema.md`'s `## Authored vs derived`
+  section names fields the engine computes (e.g. `tasks`, `focus`) rather than a human writes. A
+  documented field with no struct field is only a defect when it is authored — a derived field
+  missing from the struct is expected and exempt (`derived_fields_are_exempt` in
+  `tests/schema_conformance.rs` is the regression test for this rule).
+- **Doc location:** `tests/support/schema_doc.rs` ascends parent directories from
+  `CARGO_MANIFEST_DIR` looking for `docs/state/state-schema.md`, so it resolves correctly from
+  both the main tree and a `core/okf-core/trees/<name>/` worktree with no hardcoded depth. Set
+  `OKF_STATE_SCHEMA_DOC` to an absolute path to override the search for non-standard checkouts
+  (e.g. a standalone clone outside the `agentic-portfolio` monorepo workspace); if the doc is
+  found by neither the override nor the search, the test panics with an actionable message
+  rather than silently skipping.
+- All doc-reading I/O lives in `tests/`, never in `src/` — okf-core stays a pure, no-I/O leaf
+  library; this gate adds no new entry to `[dependencies]`.
+
 ## See also
 
 - [`../README.md`](../README.md) — crate overview, consumers, dependencies
