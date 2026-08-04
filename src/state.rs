@@ -108,6 +108,16 @@ pub struct Block {
 // ---------------------------------------------------------------------------
 
 /// The `focus` object — what's now, next, blocked, and deferred in a repo.
+///
+/// `Focus` and its sibling derived views (`Block`, `RepoRollup`, `CrossRepoEdge`)
+/// deliberately do **not** carry an unknown-field capture map, unlike the six
+/// authored structs (`StateFile`, `Track`, `TrackBlock`, `Backlog`, `Epic`,
+/// `Carryover`). Derived views are regenerated wholesale on every
+/// `mev emit-state --write` run from the authored data, not hand-edited —
+/// preserving a stale unknown key here would *resurrect* data a prior run
+/// intentionally dropped, rather than protect authored data from being lost.
+/// The asymmetry is deliberate: capture belongs only on the structs a human
+/// actually writes into `state.json` by hand.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Focus {
     /// Blocks currently in progress.
@@ -203,6 +213,23 @@ pub struct TrackBlock {
     /// byte-identical across an `emit-state --write`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub epics: Vec<String>,
+    /// Unmodeled fields, captured whole so an authored key this struct does
+    /// not (yet) know about survives a deserialize→serialize round-trip
+    /// instead of being silently dropped.
+    ///
+    /// This is the fix for the concrete incident where `TrackBlock` omitted
+    /// `note` (which `docs/state/state-schema.md` has always documented as an
+    /// authored field): every `mev emit-state --write` re-serialization
+    /// silently deleted every note in the file, unattended, because
+    /// `scripts/routine.sh` runs that command on cron. With this capture map,
+    /// a stale binary that has never heard of a field cannot delete it —
+    /// nothing ever tries to parse the field away, it just rides along in
+    /// `extra`. Same whole-object property as qm's `durable-map.ts`, which
+    /// stores each record as a whole JSONB object and reads it back as `T`
+    /// with no field-by-field deserialization (see
+    /// `agentic-portfolio/planning/qm-comparison-findings/notes.md` §7(g)).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One phase/wave entry in a leaf repo's `tracks[]`.
@@ -213,6 +240,9 @@ pub struct Track {
     /// Ordered blocks in this phase.
     #[serde(default)]
     pub blocks: Vec<TrackBlock>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +363,9 @@ pub struct Epic {
     /// **not** the source of truth (that's the blocks' own `epics[]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<String>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +441,9 @@ pub struct Backlog {
     /// Attention board + warnings while `today < snoozed_until`, regardless of age.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<String>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +488,9 @@ pub struct Carryover {
     /// Attention board + warnings while `today < snoozed_until`, regardless of age.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<String>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +540,9 @@ pub struct StateFile {
     /// Durable caveats and follow-ons.
     #[serde(default)]
     pub carryover: Vec<Carryover>,
+    /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
