@@ -304,6 +304,52 @@ in mev's `emit-state --write` as a follow-on block (append-only writes / never-o
 which keeps this change inside okf-core's no-I/O, no-path-deps invariant. That mev-side writer is
 still outstanding.
 
+### The `Default` contract for the six authored structs
+
+The same six authored structs — `StateFile`, `Track`, `TrackBlock`, `Backlog`, `Epic`, `Carryover`
+— along with the `CarryoverScope` enum that `Carryover.scope` requires as a prerequisite, each
+derive `#[derive(Default)]`. Downstream consumers **MUST** construct them with
+`..Default::default()`, naming only the fields they care about, rather than an exhaustive struct
+literal:
+
+```rust
+let block = TrackBlock {
+    id: "OK.9.A".into(),
+    title: "t".into(),
+    ..Default::default()
+};
+```
+
+This is what makes a future field addition to any of the six **non-breaking** for consumer code.
+An exhaustive literal must be updated at every construction site the moment a field is added;
+`..Default::default()` absorbs the new field silently.
+
+This closes the same defect class three separate times: `Epic` gaining `weight` (mev Phase 11)
+broke `bastion`'s exhaustive literals; the `extra` capture map field (OK.3.B) broke `mev` at 101
+call sites (`de81724`); the same `extra` field broke `bastion` at 31 call sites (31 ×
+`E0063` from `cargo test --no-run`). In all three incidents `cargo build` stayed green throughout
+— only test code constructs these literals directly, so a consumer's build-only CI reported
+all-clear while its entire test suite was uncompilable. `..Default::default()` removes the defect
+class at the call site rather than relying on every consumer to notice.
+
+**Deliberate limits on this contract:**
+
+- `StateFile::default()` yields `repo: ""`, `kind: ""`, `updated: ""` — it is **not** a valid state
+  document. The derive exists purely for call-site construction ergonomics, not to produce
+  something a validator should accept; do not treat a defaulted `StateFile` as a fixture for
+  anything beyond the shape of the type.
+- The derived views (`Block`, `RepoRollup`, `CrossRepoEdge`, `TierEntry`, `Endpoint`) are outside
+  this contract. They are regenerated wholesale on every run (see above), so there is no
+  call-site-literal problem for them to solve.
+- `#[non_exhaustive]` plus constructor builders was the stronger alternative considered and
+  deliberately not chosen here — larger surface change, tracked separately if ever pursued.
+
+`tests/struct_defaults.rs` is the compile-time guard for this contract: it constructs all six
+authored structs via `..Default::default()`, asserts the flattened `extra` map defaults to empty,
+and asserts each default value round-trips through serialize→deserialize. Removing a `#[derive(Default)]`
+from any of the six will fail that file at compile time rather than silently reopening the defect
+class described above.
+
 ## See also
 
 - [`../README.md`](../README.md) — crate overview, consumers, dependencies
