@@ -17,21 +17,30 @@
 // `okf-core` dependencies; no new `[dependencies]`/`[dev-dependencies]`
 // entry, and this lives under `tests/`, never `src/`).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Map a doc Shape column value to a plausible synthetic JSON value.
 /// Shapes carry a trailing `?` for "optional" — stripped before matching.
 ///
 /// - `integer` -> `1`
-/// - `array` (or anything containing `array`/`[]`) -> `[]`
+/// - `array` (or anything containing `array`/`[]`) -> `["x"]`
 /// - `object` (or anything containing `object`/`{}`) -> `{}`
 /// - anything else (`enum`, `string`, free text) -> `"x"`
+///
+/// Array shapes deliberately use a NON-empty array (`["x"]`), not `[]`: many
+/// `Vec` fields in this crate carry `skip_serializing_if = "Vec::is_empty"`
+/// (e.g. `TrackBlock.epics`), so an empty synthetic array would round-trip
+/// through a real field and still vanish from the re-serialized output —
+/// the exact false-"absent" this probe must not produce. A non-empty array
+/// either round-trips visibly (proving presence) or fails to deserialize
+/// against a differently-shaped element type, which the caller already
+/// treats as PRESENT (a type conflict proves the field exists).
 fn synthetic_value(shape: &str) -> Value {
     let shape = shape.trim().trim_end_matches('?').trim();
     if shape.contains("integer") {
         json!(1)
     } else if shape.contains("array") || shape.contains("[]") {
-        json!([])
+        json!(["x"])
     } else if shape.contains("object") || shape.contains("{}") {
         json!({})
     } else {
@@ -101,7 +110,11 @@ mod tests {
     #[test]
     fn unknown_field_is_absent_on_track_block() {
         assert!(
-            !struct_has_field::<TrackBlock>(track_block_seed(), "definitely_not_a_field", "string?"),
+            !struct_has_field::<TrackBlock>(
+                track_block_seed(),
+                "definitely_not_a_field",
+                "string?"
+            ),
             "expected an unrecognised field name to be reported absent"
         );
     }
