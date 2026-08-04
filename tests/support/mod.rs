@@ -6,3 +6,4 @@
 
 pub mod schema_doc;
 pub mod schema_parse;
+pub mod struct_probe;
