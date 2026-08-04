@@ -7,10 +7,41 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-07-05T16:32:00-03:00"
+timestamp: "2026-08-04T13:53:00-03:00"
 ---
 
 # Log
+
+## [2026-08-04]
+
+### OK.ticket.struct-field-default-derive — Default contract + fleet-wide consumer migration
+
+- **What:** Authored the spec (`planning/ticket-struct-field-default-derive/`) and ran it with
+  `/sdlc-task` in place on `main` — 4/4 tasks PASS, commits `2e93d4e`, `4e5598f`, `b4147ff`.
+  `#[derive(Default)]` added to `TrackBlock`, `Track`, `Epic`, `Carryover`, `StateFile` in
+  `src/state.rs`, plus `CarryoverScope` as the prerequisite (`Carryover.scope` is a non-`Option`
+  `CarryoverScope`); `Backlog` already derived it and was left alone. Derive-only — no field type
+  or serde attribute changed. New `tests/struct_defaults.rs` (18 tests) is the compile-time guard;
+  `docs/architecture.md` records the contract. Suite 176 → 194 tests, all four gates green.
+  Verified the engine's PASS independently: the OK.3.A/OK.3.B gate files
+  (`schema_conformance.rs`, `struct_probe.rs`, `state_preservation.rs`) and `Cargo.toml` have an
+  empty diff, so the change is provably non-weakening, and a temporary probe field added to
+  `TrackBlock` compiled all targets with **0 × `E0063`** where the same change shape previously
+  produced 31 in bastion and 101 in mev. Consumers migrated in parallel lanes the same day:
+  exhaustive `extra: Default::default()` sites went mev 101 → 0 and bastion 31 → 0, replaced by
+  the `..Default::default()` spread.
+- **Why:** Third occurrence of one defect class — adding a field to a shared, non-`#[non_exhaustive]`
+  okf-core struct breaks every downstream exhaustive struct literal, every time (`Epic`+`weight` →
+  bastion in mev Phase 11; `extra` → mev; `extra` → bastion). The break is invisible to
+  `cargo build` because only test code constructs these literals, so a consumer CI that builds but
+  does not test reports all-clear while its whole test suite is uncompilable. Two incidents were
+  bad luck; three is a pattern, and the fix belongs upstream where the structs live.
+- **Refs:** carryover C-2 in `planning/orchestrate-2026-08-03/notes.md` (option 1 of 2 —
+  `#[derive(Default)]`, not `#[non_exhaustive]` + builders); HQ backlog
+  `okf-core-struct-field-additions-break-consumers`; resolves C-1 (bastion test targets) as a side
+  effect. New `carryover[]` entry
+  `okf-core-default-contract-needs-spread-literals-downstream` records that the derive only helps
+  consumers that actually use the spread form.
 
 ## [run: 2026-08-03]
 
