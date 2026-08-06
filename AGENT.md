@@ -18,7 +18,7 @@ The single-source OKF frontmatter / brain-graph / state-json contract, as a stan
 
 ```bash
 cargo fmt --check          # format gate
-cargo clippy -- -D warnings  # lint gate
+cargo clippy --all-targets -- -D warnings  # lint gate (includes test targets)
 cargo test                 # test suite
 cargo build --release      # release build
 ```
