@@ -27,7 +27,7 @@ cargo build --release      # release build
 
 ```
 okf-core/
-├── planning/           ← context, status, state.json
+├── planning/           ← context, status, state.json, harness.json (the gates)
 ├── src/                ← source code
 └── Cargo.toml          ← crate manifest
 ```
