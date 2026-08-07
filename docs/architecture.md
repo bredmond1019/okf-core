@@ -202,7 +202,7 @@ flat-frontmatter surfaces are unchanged by the nested layer.
 
 ```bash
 cargo fmt --check
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo test
 cargo build --release
 ```

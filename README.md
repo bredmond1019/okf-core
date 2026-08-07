@@ -34,7 +34,7 @@ Its only dependencies are `serde`, `serde_json`, and `thiserror` — no I/O, no 
 
 ```bash
 cargo fmt --check
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo test
 cargo build --release
 ```
