@@ -7,10 +7,28 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-06T21:24:36-03:00"
+timestamp: "2026-08-07T06:18:05-03:00"
 ---
 
 # Log
+
+## [2026-08-07]
+
+### Lane C3 run artifacts — and the new push gate catching our own mistake
+
+- **What:** Wrote `planning/orchestration-run/notes.md` (8 mid-run decisions with reasoning, 5
+  defects, cross-lane observations, 5 open items) and `planning/orchestration-run/review.md`
+  (plain-English overview plus an 8-step manual verification checklist, every step executed and
+  confirmed before shipping) — `bc45d677`. Noted `harness.json` in both directory maps (`7f37708`).
+  Added two carryovers: the `hooks/README.md` sync divergence, and okf-core's inconsistent doc_id
+  convention.
+- **Why:** Run context was living only in the chat transcript and would be lost. Then `notes.md`
+  itself shipped `related: [..., master-plan]` while the real doc_id is `okf-core-master-plan` —
+  `hooks/pre-push` blocked at stage 1 on a net-new `E_GRAPH_DANGLING_RELATED` against a baseline of
+  0. Fixed and re-validated at 0. The gate this lane installed caught the lane's own error on its
+  first real run, which is the strongest available evidence it works.
+- **Refs:** `planning/orchestration-run/review.md`; carryover
+  `okf-core-doc-ids-are-inconsistent-with-filenames`
 
 ## [2026-08-06]
 
