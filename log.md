@@ -7,10 +7,30 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-04T13:53:00-03:00"
+timestamp: "2026-08-06T21:24:36-03:00"
 ---
 
 # Log
+
+## [2026-08-06]
+
+### OK.ticket.harness-json-all-targets-clippy — the repo's first harness.json
+
+- **What:** Authored `planning/ticket-harness-json-all-targets-clippy/` and ran it with `/sdlc-task`
+  in place on `main` — 5/5 tasks PASS, all first attempt. Added `planning/harness.json` with four
+  gated checks (`fmt`, `clippy --all-targets -- -D warnings`, `cargo test` authoritative,
+  `cargo build --release` at `perTask: false`). Corrected the stale narrow clippy command in
+  `AGENT.md`, `README.md`, and `docs/architecture.md` (`9bfafad`), and in HQ's canonical
+  `hooks/README.md` (HQ `8f9573c1`). Verified the gates independently: all four green, 194 tests.
+  No `src/` or `tests/` change.
+- **Why:** okf-core was the last of 19 repos without a `harness.json`, so its gates lived only as
+  prose and its `hooks/pre-push` stage 2 skipped entirely. The documented lint gate was the narrow
+  `cargo clippy`, which lints no test code — and both blocks of the 2026-08-03 run were almost
+  entirely test code, so the gate never saw what those runs changed. Proven rather than assumed: a
+  `needless_return` probe in `tests/support/struct_probe.rs` made narrow clippy exit 0 and
+  `--all-targets` exit 101; probe reverted, tree clean.
+- **Refs:** substrate lane C3 of `planning/demand-ready/roadmap.md`;
+  `planning/ticket-harness-json-all-targets-clippy/tasks.md`
 
 ## [2026-08-04]
 
