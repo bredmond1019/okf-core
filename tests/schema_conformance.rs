@@ -137,13 +137,15 @@ fn check_field_count_floor(
     }
 }
 
-/// The gate: every authored field documented on one of the four mapped
-/// sections has a corresponding field on the matching struct.
-#[test]
-fn schema_struct_conformance() {
-    let doc = read_schema_doc();
-    let fields = parse_field_tables(&doc);
-    let derived = parse_derived_fields(&doc);
+/// The reusable core of the gate: parse `doc` (an already-loaded schema-doc
+/// string, real or fixture) and return every accumulated violation —
+/// count-floor shortfalls and struct-conformance drift alike — WITHOUT
+/// asserting. Factored out so the fixture-driven tests below (`floor_*`)
+/// can drive the exact same logic the live gate (`schema_struct_conformance`)
+/// runs, against synthetic docs, instead of duplicating it.
+fn run_conformance_check(doc: &str) -> Vec<String> {
+    let fields = parse_field_tables(doc);
+    let derived = parse_derived_fields(doc);
 
     let mut violations = Vec::new();
 
@@ -193,11 +195,190 @@ fn schema_struct_conformance() {
         &mut violations,
     );
 
+    violations
+}
+
+/// The gate: every authored field documented on one of the four mapped
+/// sections has a corresponding field on the matching struct.
+#[test]
+fn schema_struct_conformance() {
+    let doc = read_schema_doc();
+    let violations = run_conformance_check(&doc);
+
     assert!(
         violations.is_empty(),
         "schema/struct conformance drift found:\n{}",
         violations.join("\n")
     );
+}
+
+// ─── Fixture-driven load-bearing test triple (ticket-conformance-field-count-floor, task 4) ───
+//
+// A floor set too high and a floor set too low both pass a single-direction
+// suite. These tests land the OTHER directions the red-first observation in
+// task 3 (see tasks.md's Amendment Log) proved were missing:
+//   - a fixture with one extra, DERIVED-exempt field must still PASS
+//     (legitimate schema growth is not a failure);
+//   - a fixture with zero parseable tables must still fail loudly, exactly
+//     as the old `!is_empty()` asserts did;
+//   - a fixture narrowing exactly one of the four mapped sections by one
+//     row (parses >=1, fewer than its floor) must trip exactly one
+//     violation, naming that section — repeated for ALL FOUR sections
+//     rather than one representative, since building each is mechanical
+//     (see `fixture_doc` below).
+//
+// Every fixture here is fully self-contained synthetic markdown — never a
+// derivative of the brain's real `docs/state/state-schema.md` — so these
+// tests stay stable across edits to that external doc. They read the real
+// per-section floors from `schema_floor::expected_field_count` (never a
+// re-hardcoded literal), so a future change to those floors updates these
+// fixtures' row counts automatically instead of silently decoupling from
+// the source of truth these tests exist to exercise.
+
+/// The four sections the gate maps to a struct, each paired with ONE
+/// struct-valid field name/shape that `check_struct` will find present on
+/// the matching struct. The parser and `check_struct` do not dedupe by
+/// field name, so repeating a single valid row N times isolates the COUNT
+/// floor from struct-conformance concerns — a fixture built this way can
+/// never fail on `check_struct`, only on `check_field_count_floor`.
+const FIXTURE_SECTIONS: [(&str, &str, &str); 4] = [
+    ("Block vocabulary", "id", "string"),
+    ("backlog[]", "slug", "string"),
+    ("epics[]", "slug", "string"),
+    ("carryover[]", "slug", "string"),
+];
+
+/// Build a self-contained fixture doc covering all four mapped sections,
+/// each populated with exactly its real floor's row count (from
+/// `schema_floor::expected_field_count`).
+///
+/// - `narrow`: if `Some(section_heading)`, that section gets `floor - 1`
+///   rows instead of `floor` — a table whose header parses fine but has one
+///   fewer row than documented, the exact "partial drop" failure mode this
+///   ticket exists to catch (see `schema_parse.rs:82`'s per-row
+///   conditional collection).
+/// - `extra_derived`: if `Some((section_heading, extra_field_name))`, that
+///   section gets ONE additional row beyond its floor, and a synthetic `##
+///   Authored vs derived` table is appended marking that extra field name
+///   as derived — so `check_struct` exempts it and only the count floor is
+///   exercised, matching "the doc legitimately documents a new field."
+fn fixture_doc(narrow: Option<&str>, extra_derived: Option<(&str, &str)>) -> String {
+    let mut doc = String::new();
+    let mut derived_rows = String::new();
+
+    for (heading, field, shape) in FIXTURE_SECTIONS {
+        let floor = expected_field_count(heading);
+        let mut rows = floor;
+        if narrow == Some(heading) {
+            rows -= 1;
+        }
+
+        doc.push_str(&format!(
+            "## {heading}\n\n| Field | Shape | Meaning |\n|---|---|---|\n"
+        ));
+        for _ in 0..rows {
+            doc.push_str(&format!("| `{field}` | {shape} | fixture row. |\n"));
+        }
+        if let Some((extra_heading, extra_field)) = extra_derived
+            && extra_heading == heading
+        {
+            doc.push_str(&format!(
+                "| `{extra_field}` | string? | fixture derived extra field. |\n"
+            ));
+            derived_rows.push_str(&format!("| **Derived** | `{extra_field}` | fixture |\n"));
+        }
+        doc.push('\n');
+    }
+
+    if !derived_rows.is_empty() {
+        doc.push_str(
+            "## Authored vs derived\n\n| Bucket | Fields | Who writes it |\n|---|---|---|\n",
+        );
+        doc.push_str(&derived_rows);
+    }
+
+    doc
+}
+
+/// Every mapped section documented at exactly its floor: the gate passes.
+/// This is the `>=` boundary itself — a floor that were accidentally `>`
+/// would fail this.
+#[test]
+fn floor_fixture_at_exactly_the_floor_passes() {
+    let doc = fixture_doc(None, None);
+    let violations = run_conformance_check(&doc);
+    assert!(
+        violations.is_empty(),
+        "a fixture with every mapped section at exactly its floor should pass; got: {violations:?}"
+    );
+}
+
+/// Legitimate growth: a fixture documenting one EXTRA field (marked
+/// derived, so struct-conformance is not in play) in `Block vocabulary`
+/// must still pass. Without this, the next real schema addition turns the
+/// gate red for a correct change.
+#[test]
+fn floor_fixture_with_extra_derived_field_passes() {
+    let doc = fixture_doc(None, Some(("Block vocabulary", "extra_growth_field")));
+    let violations = run_conformance_check(&doc);
+    assert!(
+        violations.is_empty(),
+        "a fixture with one extra DOCUMENTED+DERIVED field should pass — \
+         legitimate growth is not a failure; got: {violations:?}"
+    );
+}
+
+/// Total parse failure: headings present, no `| Field | Shape | Meaning |`
+/// table under any of the four mapped sections. Must still fail, with a
+/// message at least as actionable as the old `!is_empty()` asserts — the
+/// floor must not weaken the case that already worked.
+#[test]
+fn floor_fixture_with_zero_parseable_tables_fails_loudly() {
+    let doc = "## Block vocabulary\n\nNo table here — total parser failure fixture.\n\n\
+               ## backlog[]\n\nNo table here.\n\n\
+               ## epics[]\n\nNo table here.\n\n\
+               ## carryover[]\n\nNo table here.\n";
+    let violations = run_conformance_check(doc);
+    assert_eq!(
+        violations.len(),
+        4,
+        "expected one floor violation per mapped section on total parse failure; got: {violations:?}"
+    );
+    for (heading, ..) in FIXTURE_SECTIONS {
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.contains(&format!("section `{heading}`"))
+                    && v.contains("parsed only 0 field")),
+            "expected a floor violation naming `{heading}` with 0 observed fields; got: {violations:?}"
+        );
+    }
+}
+
+/// Narrowing is caught, repeated for each of the four mapped sections
+/// (rather than justifying one representative — building each fixture is
+/// mechanical via `fixture_doc`, so full coverage costs nothing extra): a
+/// section with `floor - 1` rows (table header intact, one row silently
+/// dropped, exactly like `parse_field_tables`'s conditional row collection
+/// under a reformatted table) trips exactly one violation, naming that
+/// section, while the other three sections — still at their own floor —
+/// stay clean.
+#[test]
+fn floor_narrowing_is_caught_for_each_mapped_section() {
+    for (heading, ..) in FIXTURE_SECTIONS {
+        let doc = fixture_doc(Some(heading), None);
+        let violations = run_conformance_check(&doc);
+        assert_eq!(
+            violations.len(),
+            1,
+            "narrowing `{heading}` by one row should trip exactly one floor \
+             violation (the other three sections stay at their own floor); got: {violations:?}"
+        );
+        assert!(
+            violations[0].contains(&format!("section `{heading}`")),
+            "expected the single violation to name `{heading}`; got: {violations:?}"
+        );
+    }
 }
 
 /// Regression guard for design decision 3 (tasks.md): `tasks` is documented
