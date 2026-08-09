@@ -22,6 +22,7 @@ use serde_json::{Value, json};
 use okf_core::{Backlog, Carryover, Epic, TrackBlock};
 
 use support::schema_doc::read_schema_doc;
+use support::schema_floor::expected_field_count;
 use support::schema_parse::{
     DocumentedField, is_derived, parse_derived_fields, parse_field_tables,
 };
@@ -104,6 +105,38 @@ fn check_struct<T>(
     }
 }
 
+/// Check that `fields` (the fields parsed under `section`) meet or exceed
+/// the canonical floor from `schema_floor::expected_field_count`, pushing a
+/// violation onto `violations` rather than panicking immediately — this
+/// matches `check_struct`'s accumulate-don't-panic-on-first shape, so a run
+/// that narrows multiple sections at once surfaces all of them, not just
+/// the first.
+///
+/// This replaces the old `!fields.is_empty()` asserts, which were a floor
+/// of ONE: enough to catch total parser failure, not enough to catch
+/// PARTIAL parser failure (a doc reformat that drops most, but not all, of
+/// a section's rows). See `schema_floor.rs`'s module doc comment for why
+/// the floor is derived from an explicit per-section table rather than
+/// hardcoded at each of the four call sites.
+fn check_field_count_floor(
+    section: &str,
+    fields: &[&DocumentedField],
+    violations: &mut Vec<String>,
+) {
+    let observed = fields.len();
+    let floor = expected_field_count(section);
+    if observed < floor {
+        violations.push(format!(
+            "section `{section}` parsed only {observed} field(s), expected at least {floor} \
+             (floor from `schema_floor::expected_field_count`, a per-section table hand-derived \
+             from `docs/state/state-schema.md`) — either the doc's `| Field | Shape | Meaning |` \
+             table for this section was reformatted and rows were silently dropped by the parser \
+             (check schema_parse.rs's exact header match), or the section legitimately shrank and \
+             the floor in `schema_floor.rs` needs a deliberate, reviewed lowering"
+        ));
+    }
+}
+
 /// The gate: every authored field documented on one of the four mapped
 /// sections has a corresponding field on the matching struct.
 #[test]
@@ -118,10 +151,7 @@ fn schema_struct_conformance() {
         .iter()
         .filter(|f| section_matches(&f.section, "Block vocabulary"))
         .collect();
-    assert!(
-        !block_vocabulary.is_empty(),
-        "expected at least one field parsed under `Block vocabulary` — parser or doc regression"
-    );
+    check_field_count_floor("Block vocabulary", &block_vocabulary, &mut violations);
     check_struct::<TrackBlock>(
         track_block_seed(),
         &block_vocabulary,
@@ -134,10 +164,7 @@ fn schema_struct_conformance() {
         .iter()
         .filter(|f| section_matches(&f.section, "backlog[]"))
         .collect();
-    assert!(
-        !backlog_fields.is_empty(),
-        "expected at least one field parsed under `backlog[]` — parser or doc regression"
-    );
+    check_field_count_floor("backlog[]", &backlog_fields, &mut violations);
     check_struct::<Backlog>(
         backlog_seed(),
         &backlog_fields,
@@ -150,20 +177,14 @@ fn schema_struct_conformance() {
         .iter()
         .filter(|f| section_matches(&f.section, "epics[]"))
         .collect();
-    assert!(
-        !epic_fields.is_empty(),
-        "expected at least one field parsed under `epics[]` — parser or doc regression"
-    );
+    check_field_count_floor("epics[]", &epic_fields, &mut violations);
     check_struct::<Epic>(epic_seed(), &epic_fields, &derived, "Epic", &mut violations);
 
     let carryover_fields: Vec<&DocumentedField> = fields
         .iter()
         .filter(|f| section_matches(&f.section, "carryover[]"))
         .collect();
-    assert!(
-        !carryover_fields.is_empty(),
-        "expected at least one field parsed under `carryover[]` — parser or doc regression"
-    );
+    check_field_count_floor("carryover[]", &carryover_fields, &mut violations);
     check_struct::<Carryover>(
         carryover_seed(),
         &carryover_fields,
