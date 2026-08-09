@@ -10,6 +10,7 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 /// Relative path, from the monorepo root, to the authored schema doc.
 const SCHEMA_DOC_RELATIVE: &str = "docs/state/state-schema.md";
@@ -94,6 +95,15 @@ pub fn read_schema_doc_at(path: &Path) -> String {
 mod tests {
     use super::*;
 
+    /// Serializes the tests below that touch the process-global
+    /// `OVERRIDE_ENV_VAR`: `cargo test` runs tests as threads within one
+    /// process, so a test that sets/removes the var and one that asserts
+    /// it is unset race each other without this lock. Poisoning is
+    /// ignored (`unwrap_or_else(|e| e.into_inner())`) so one failing test
+    /// under the lock does not spuriously fail every later test that
+    /// acquires it.
+    static ENV_VAR_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn locate_schema_doc_finds_the_file() {
         let path = locate_schema_doc();
@@ -117,6 +127,9 @@ mod tests {
         // Confirm the seam works without setting OKF_STATE_SCHEMA_DOC at
         // all — this is what fixture tests must use to avoid racing
         // sibling tests over the process-global env var.
+        let _guard = ENV_VAR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         assert!(
             env::var(OVERRIDE_ENV_VAR).is_err(),
             "override env var must not be set entering this test"
@@ -146,10 +159,12 @@ mod tests {
     fn override_env_var_is_used_verbatim() {
         // Set the override to the file we already know exists via normal
         // discovery, and confirm it is honoured verbatim (not re-searched).
+        let _guard = ENV_VAR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let real_path = locate_schema_doc();
-        // SAFETY: test-only, single-threaded within this process for this
-        // var; no other test in this binary reads OKF_STATE_SCHEMA_DOC
-        // concurrently.
+        // SAFETY: guarded by ENV_VAR_TEST_LOCK above, so no other test in
+        // this binary reads or writes OKF_STATE_SCHEMA_DOC concurrently.
         unsafe {
             env::set_var(OVERRIDE_ENV_VAR, &real_path);
         }
