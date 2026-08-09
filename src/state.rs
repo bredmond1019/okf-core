@@ -569,6 +569,20 @@ pub struct Carryover {
     /// Optional related edges (same forms as blocked_by).
     #[serde(default)]
     pub related: Vec<BlockedBy>,
+    /// Authored value-if-resolved priority, same 0..=3 money/deadline rubric as
+    /// blocks and HQ backlog. NOT a statement about what this entry blocks —
+    /// blocking-ness is DERIVED from `blocks[]` and is never authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<u8>,
+    /// Edges to the work this carryover blocks. Same forms as `blocked_by` —
+    /// `External { what }` covers "blocks every ticket run fleet-wide", which
+    /// has no node target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocks: Vec<BlockedBy>,
+    /// Free-form shared identity string linking the same finding filed in
+    /// several repos. No registry, many-to-one by construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finding_id: Option<String>,
     /// Human-readable condition under which this entry should be deleted.
     #[serde(default)]
     pub clears_when: Option<String>,
