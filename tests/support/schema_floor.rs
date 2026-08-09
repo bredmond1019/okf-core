@@ -48,7 +48,7 @@
 //
 // **Chosen: (b).** The counts below were read off the current
 // `docs/state/state-schema.md` field tables (Block vocabulary = 14,
-// `backlog[]` = 12, `epics[]` = 7, `carryover[]` = 9) — every row currently
+// `backlog[]` = 12, `epics[]` = 7, `carryover[]` = 12) — every row currently
 // documented, not filtered to non-derived fields, because the floor guards
 // the PARSE (what `parse_field_tables` returns), not the post-exemption
 // conformance check that runs on top of it.
@@ -97,9 +97,9 @@ pub fn expected_field_count(section: &str) -> usize {
         // 7 documented rows: slug, title, description, status, weight,
         // plan, repos.
         "epics[]" => 7,
-        // 9 documented rows: slug, scope, kind, text, related, clears_when,
-        // created, reviewed, snoozed_until.
-        "carryover[]" => 9,
+        // 12 documented rows: slug, scope, kind, text, related, clears_when,
+        // priority, blocks, finding_id, created, reviewed, snoozed_until.
+        "carryover[]" => 12,
         other => panic!(
             "expected_field_count: unmapped section `{other}` — the count \
              floor only covers the four sections `section_matches` maps to \
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(expected_field_count("Block vocabulary"), 14);
         assert_eq!(expected_field_count("backlog[]"), 12);
         assert_eq!(expected_field_count("epics[]"), 7);
-        assert_eq!(expected_field_count("carryover[]"), 9);
+        assert_eq!(expected_field_count("carryover[]"), 12);
     }
 
     #[test]
