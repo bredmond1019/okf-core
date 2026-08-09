@@ -233,13 +233,36 @@ hole that twice deleted authored `TrackBlock.note` values (2026-08-02, 2026-08-0
   documented field with no struct field is only a defect when it is authored — a derived field
   missing from the struct is expected and exempt (`derived_fields_are_exempt` in
   `tests/schema_conformance.rs` is the regression test for this rule).
+- **Field-count floor (`OK.ticket.conformance-field-count-floor`):** the section asserts used to
+  be `!fields.is_empty()` — a floor of *one*. That catches a parser returning nothing; it does not
+  catch a parser returning *some*. Because the table match at `tests/support/schema_parse.rs:98` is
+  exact string equality on `| Field | Shape | Meaning |`, a doc reformat can drop most of a
+  section's rows while one still parses: the assert passed, `check_struct` dutifully verified the
+  survivors, and the gate reported green over a silently narrowed scope — the same
+  stops-checking-quietly failure this gate exists to eliminate, recurring one layer down.
+  `check_field_count_floor` now compares each section's parsed count against a per-section floor
+  from `tests/support/schema_floor.rs` (`Block vocabulary` 14, `` backlog[] `` 12, `` epics[] `` 7,
+  `` carryover[] `` 9). Shortfalls accumulate into the same `violations` vector `check_struct`
+  uses, so one run reports every short section, and the message names the section, the observed
+  count, the floor, and the floor's origin — a reformatted doc and a legitimately grown schema have
+  opposite fixes.
+  - It is a **floor, not an equality**: `>=` trips on narrowing and stays quiet on legitimate
+    growth. An exact count would turn every honest schema addition red and train people to bump
+    the number without reading it.
+  - **What it cannot catch:** one edit that adds N fields to a section while dropping N or fewer
+    via a reformat — the net count clears the floor and nothing fails. Catching that needs a floor
+    keyed on field *names*, which is deliberately out of scope here.
+  - The floor is a hand-maintained table, so legitimate doc growth does not auto-bump it. An
+    untightened floor stays safe, just loose.
 - **Doc location:** `tests/support/schema_doc.rs` ascends parent directories from
   `CARGO_MANIFEST_DIR` looking for `docs/state/state-schema.md`, so it resolves correctly from
   both the main tree and a `core/okf-core/trees/<name>/` worktree with no hardcoded depth. Set
   `OKF_STATE_SCHEMA_DOC` to an absolute path to override the search for non-standard checkouts
   (e.g. a standalone clone outside the `agentic-portfolio` monorepo workspace); if the doc is
   found by neither the override nor the search, the test panics with an actionable message
-  rather than silently skipping.
+  rather than silently skipping. Fixture-driven tests take `read_schema_doc_at(path)` instead of
+  setting that env var — env vars are process-global and `cargo test` runs tests as threads in one
+  process, so a fixture that set it would race every sibling test.
 - All doc-reading I/O lives in `tests/`, never in `src/` — okf-core stays a pure, no-I/O leaf
   library; this gate adds no new entry to `[dependencies]`.
 
