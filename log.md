@@ -7,10 +7,35 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-07T06:18:05-03:00"
+timestamp: "2026-08-09T12:30:00-03:00"
 ---
 
 # Log
+
+## [2026-08-09]
+
+### A floor for the conformance gate — the gate that could stop checking
+
+- **What:** Closed `OK.ticket.conformance-field-count-floor` (lane C3 of `close-the-loop`, one
+  block, `/sdlc-task`, 7/7 tasks). Replaced the four `!fields.is_empty()` asserts in
+  `schema_struct_conformance` with `check_field_count_floor`, backed by an explicit per-section
+  table in the new `tests/support/schema_floor.rs` (14/12/7/9); shortfalls accumulate into the same
+  `violations` vector `check_struct` uses. Added `read_schema_doc_at(path)` so fixtures never touch
+  the process-global `OKF_STATE_SCHEMA_DOC`. Fixture suite covers narrowing in all four sections,
+  the exact-floor boundary, legitimate growth, and zero parseable tables. `parse_derived_fields`
+  dispositioned rather than fixed — its version of the bug fails loud. Docs patched
+  (`docs/architecture.md`). Commits `c8d0f2c`, `3d37de8`, `d3c63d2`, `82da72e`, `4aee7ca`,
+  `24a02ae`.
+- **Why:** `!is_empty()` is a floor of one. It catches a parser returning nothing, not a parser
+  returning *some* — and partial return is the realistic failure, because the table header match at
+  `schema_parse.rs:98` is exact string equality. A doc reformat could drop 13 of 14 documented
+  fields, the assert would pass, and the gate would report green while checking one field. That is
+  the exact stops-checking-quietly failure `OK.3.A` was built to eliminate, recurring inside
+  `OK.3.A`. Verified it was real before fixing it: the same fixture exits 0 pre-fix and 101
+  post-fix. Verified the floor is tight after fixing it: counted independently against the live
+  doc, 14/12/7/9 exactly.
+- **Refs:** `planning/ticket-conformance-field-count-floor/` · `planning/close-the-loop/roadmap.md`
+  lane C3 · `OK.3.A`
 
 ## [2026-08-07]
 
