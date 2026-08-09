@@ -583,9 +583,12 @@ pub struct Carryover {
     /// several repos. No registry, many-to-one by construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finding_id: Option<String>,
-    /// Human-readable condition under which this entry should be deleted.
+    /// Condition under which this entry should be deleted: either free
+    /// prose (the legacy and still-valid form for subjective conditions) or
+    /// a typed predicate object whose `type` is one of `block_closed`,
+    /// `file_exists`, `file_contains`, `command_exits_zero`.
     #[serde(default)]
-    pub clears_when: Option<String>,
+    pub clears_when: Option<ClearsWhen>,
     /// Date recorded (`YYYY-MM-DD` or full RFC3339).
     pub created: String,
     /// Last "keep / re-affirm" disposition date — a full staleness-clock reset.
