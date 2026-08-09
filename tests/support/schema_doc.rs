@@ -65,10 +65,26 @@ pub fn locate_schema_doc() -> PathBuf {
 
 /// Locate + read the schema doc to a `String`.
 pub fn read_schema_doc() -> String {
-    let path = locate_schema_doc();
-    std::fs::read_to_string(&path).unwrap_or_else(|err| {
+    read_schema_doc_at(&locate_schema_doc())
+}
+
+/// Read the schema doc from an explicit `path`, bypassing discovery and the
+/// `OKF_STATE_SCHEMA_DOC` env var entirely.
+///
+/// This is the seam fixture-driven tests must use instead of mutating
+/// `OKF_STATE_SCHEMA_DOC`: env vars are process-global and `cargo test` runs
+/// tests as threads within one process, so a fixture that sets the override
+/// var races every sibling test reading the same var concurrently. Naming
+/// the fixture's path directly sidesteps that race instead of trying to
+/// serialize around it.
+///
+/// Preserves the same fail-closed behaviour as `read_schema_doc`: a missing
+/// or unreadable path panics with an actionable message rather than
+/// silently skipping the check it backs.
+pub fn read_schema_doc_at(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|err| {
         panic!(
-            "found `{SCHEMA_DOC_RELATIVE}` at {} but could not read it: {err}",
+            "could not read schema doc fixture at {}: {err}",
             path.display()
         )
     })
@@ -94,6 +110,36 @@ mod tests {
         let content = read_schema_doc();
         assert!(!content.is_empty());
         assert!(content.contains("Block vocabulary"));
+    }
+
+    #[test]
+    fn read_schema_doc_at_reads_an_explicit_path_without_touching_env() {
+        // Confirm the seam works without setting OKF_STATE_SCHEMA_DOC at
+        // all — this is what fixture tests must use to avoid racing
+        // sibling tests over the process-global env var.
+        assert!(
+            env::var(OVERRIDE_ENV_VAR).is_err(),
+            "override env var must not be set entering this test"
+        );
+        let real_path = locate_schema_doc();
+        let content = read_schema_doc_at(&real_path);
+        assert!(!content.is_empty());
+        assert!(content.contains("Block vocabulary"));
+        assert!(
+            env::var(OVERRIDE_ENV_VAR).is_err(),
+            "read_schema_doc_at must not set the override env var as a side effect"
+        );
+    }
+
+    #[test]
+    fn read_schema_doc_at_panics_on_missing_path() {
+        let result = std::panic::catch_unwind(|| {
+            read_schema_doc_at(Path::new("/nonexistent/does-not-exist-schema.md"))
+        });
+        assert!(
+            result.is_err(),
+            "read_schema_doc_at must panic (fail closed) on an unreadable path"
+        );
     }
 
     #[test]
