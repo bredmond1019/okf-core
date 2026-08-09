@@ -64,6 +64,81 @@ pub enum BlockedBy {
 }
 
 // ---------------------------------------------------------------------------
+// ClearsWhen / ClearsWhenPredicate — carryover clearing conditions
+// ---------------------------------------------------------------------------
+
+/// A carryover clearing condition: either free prose (the legacy form, and
+/// still the only form available for genuinely subjective conditions) or a
+/// machine-checkable typed predicate.
+///
+/// Untagged: `Prose(String)` MUST stay the first variant. `#[serde(untagged)]`
+/// tries variants in declaration order, and Prose-first is what guarantees
+/// every existing prose `clears_when` string in the live corpus keeps
+/// deserializing to exactly the string it is today rather than being coerced
+/// into (and failing to parse as) a `Predicate`.
+///
+/// okf-core defines the SHAPE only and never evaluates it (AGENT.md rule 3);
+/// evaluation lives in mev.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum ClearsWhen {
+    /// Free-form prose describing what clears this carryover. The legacy
+    /// form, and still the only form for subjective conditions.
+    Prose(String),
+    /// A machine-checkable typed predicate.
+    Predicate(ClearsWhenPredicate),
+}
+
+/// A machine-checkable carryover clearing predicate.
+///
+/// Tagged by the `"type"` field. Unknown `type` values are rejected by serde
+/// (no `#[serde(other)]`), surfaced as a parse error rather than silently
+/// falling back to prose.
+///
+/// okf-core defines the SHAPE only and never evaluates it (AGENT.md rule 3);
+/// evaluation lives in mev.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClearsWhenPredicate {
+    /// Clears when the named block in the named repo is closed.
+    BlockClosed {
+        /// Slug of the owning repo.
+        repo: String,
+        /// Canonical block ID (e.g. `BA.11.C`).
+        id: String,
+        /// Optional gloss explaining the condition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+    /// Clears when the given path exists on disk.
+    FileExists {
+        /// Path to check for existence.
+        path: String,
+        /// Optional gloss explaining the condition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+    /// Clears when the given path exists and contains a pattern match.
+    FileContains {
+        /// Path to check.
+        path: String,
+        /// Pattern to search for within the file.
+        pattern: String,
+        /// Optional gloss explaining the condition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+    /// Clears when running the given command exits zero.
+    CommandExitsZero {
+        /// Shell command to run.
+        command: String,
+        /// Optional gloss explaining the condition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+}
+
+// ---------------------------------------------------------------------------
 // Block — lenient superset across now/next/blocked variants
 // ---------------------------------------------------------------------------
 
