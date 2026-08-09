@@ -16,7 +16,7 @@
 // module) because `src/state.rs` is already large and these tests exercise the crate's public
 // surface only (`okf_core::StateFile` etc.), same posture as `tests/schema_conformance.rs`.
 
-use okf_core::{StateFile, TrackBlock};
+use okf_core::{BlockedBy, Carryover, ClearsWhen, ClearsWhenPredicate, StateFile, TrackBlock};
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
 /// authored level: top level, a `tracks[]` entry, a `tracks[].blocks[]` entry, a `backlog[]`
@@ -307,4 +307,266 @@ fn note_survives_without_a_struct_field() {
     // `extra` unchanged. The field was restored immediately after and is present here again, so
     // this suite exercises the restored (real, committed) shape.
     assert!(raw.contains("\"note\""));
+}
+
+// ---------------------------------------------------------------------------
+// Task 4 — round-trip and serialization-shape tests for the carryover
+// triage fields (`priority`, `blocks`, `finding_id`) and typed `ClearsWhen`.
+// ---------------------------------------------------------------------------
+
+/// `block_closed` WITHOUT `note` round-trips: deserializes to the expected
+/// variant/fields, and re-serializes to JSON equal to the input (as a
+/// `serde_json::Value`, so key order is irrelevant).
+#[test]
+fn clears_when_block_closed_without_note_round_trips() {
+    let raw = r#"{"type":"block_closed","repo":"base-template","id":"BT.ticket.compilable-task-boundaries"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let predicate: ClearsWhenPredicate = serde_json::from_str(raw).unwrap();
+    match &predicate {
+        ClearsWhenPredicate::BlockClosed { repo, id, note } => {
+            assert_eq!(repo, "base-template");
+            assert_eq!(id, "BT.ticket.compilable-task-boundaries");
+            assert_eq!(*note, None);
+        }
+        other => panic!("expected BlockClosed, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&predicate).unwrap();
+    assert_eq!(original, round);
+}
+
+/// `block_closed` WITH `note` round-trips.
+#[test]
+fn clears_when_block_closed_with_note_round_trips() {
+    let raw = r#"{"type":"block_closed","repo":"base-template","id":"BT.ticket.compilable-task-boundaries","note":"waiting on the parent block"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let predicate: ClearsWhenPredicate = serde_json::from_str(raw).unwrap();
+    match &predicate {
+        ClearsWhenPredicate::BlockClosed { repo, id, note } => {
+            assert_eq!(repo, "base-template");
+            assert_eq!(id, "BT.ticket.compilable-task-boundaries");
+            assert_eq!(note.as_deref(), Some("waiting on the parent block"));
+        }
+        other => panic!("expected BlockClosed, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&predicate).unwrap();
+    assert_eq!(original, round);
+}
+
+/// `file_exists` round-trips.
+#[test]
+fn clears_when_file_exists_round_trips() {
+    let raw = r#"{"type":"file_exists","path":"docs/state/state-schema.md"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let predicate: ClearsWhenPredicate = serde_json::from_str(raw).unwrap();
+    match &predicate {
+        ClearsWhenPredicate::FileExists { path, note } => {
+            assert_eq!(path, "docs/state/state-schema.md");
+            assert_eq!(*note, None);
+        }
+        other => panic!("expected FileExists, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&predicate).unwrap();
+    assert_eq!(original, round);
+}
+
+/// `file_contains` round-trips.
+#[test]
+fn clears_when_file_contains_round_trips() {
+    let raw = r#"{"type":"file_contains","path":"src/state.rs","pattern":"pub struct Carryover"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let predicate: ClearsWhenPredicate = serde_json::from_str(raw).unwrap();
+    match &predicate {
+        ClearsWhenPredicate::FileContains {
+            path,
+            pattern,
+            note,
+        } => {
+            assert_eq!(path, "src/state.rs");
+            assert_eq!(pattern, "pub struct Carryover");
+            assert_eq!(*note, None);
+        }
+        other => panic!("expected FileContains, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&predicate).unwrap();
+    assert_eq!(original, round);
+}
+
+/// `command_exits_zero` round-trips.
+#[test]
+fn clears_when_command_exits_zero_round_trips() {
+    let raw = r#"{"type":"command_exits_zero","command":"cargo test --test state_preservation"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let predicate: ClearsWhenPredicate = serde_json::from_str(raw).unwrap();
+    match &predicate {
+        ClearsWhenPredicate::CommandExitsZero { command, note } => {
+            assert_eq!(command, "cargo test --test state_preservation");
+            assert_eq!(*note, None);
+        }
+        other => panic!("expected CommandExitsZero, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&predicate).unwrap();
+    assert_eq!(original, round);
+}
+
+/// Regression guard for the untagged variant ordering (task 1's load-bearing
+/// constraint): a prose `clears_when` string re-serializes as a bare JSON
+/// string, NOT as a wrapper object like `{"Prose":"..."}`.
+#[test]
+fn clears_when_prose_round_trips_as_bare_string() {
+    let raw = r#""when the nextest hook actually fires in this repo""#;
+    let value: ClearsWhen = serde_json::from_str(raw).unwrap();
+    assert_eq!(
+        value,
+        ClearsWhen::Prose("when the nextest hook actually fires in this repo".to_string())
+    );
+
+    let round = serde_json::to_value(&value).unwrap();
+    assert_eq!(
+        round,
+        serde_json::Value::String("when the nextest hook actually fires in this repo".to_string())
+    );
+    assert!(
+        round.is_string(),
+        "prose must serialize as a bare string, not a wrapper object: {round:?}"
+    );
+}
+
+/// A typed predicate parses to `ClearsWhen::Predicate`, not `ClearsWhen::Prose`
+/// — the untagged enum picks the right variant for an object input.
+#[test]
+fn clears_when_predicate_round_trips_through_the_untagged_wrapper() {
+    let raw = r#"{"type":"block_closed","repo":"base-template","id":"BT.ticket.compilable-task-boundaries"}"#;
+    let value: ClearsWhen = serde_json::from_str(raw).unwrap();
+    match &value {
+        ClearsWhen::Predicate(ClearsWhenPredicate::BlockClosed { repo, id, note }) => {
+            assert_eq!(repo, "base-template");
+            assert_eq!(id, "BT.ticket.compilable-task-boundaries");
+            assert_eq!(*note, None);
+        }
+        other => panic!("expected Predicate(BlockClosed), got {other:?}"),
+    }
+
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let round = serde_json::to_value(&value).unwrap();
+    assert_eq!(original, round);
+}
+
+/// An unknown predicate `type` fails to deserialize rather than silently
+/// falling back to `ClearsWhen::Prose` — pins the "no `#[serde(other)]`"
+/// constraint from task 1's `ClearsWhenPredicate` doc comment. A typo in a
+/// hand-authored `clears_when` object must surface as a parse error, not
+/// get silently swallowed by the untagged enum trying the `Prose` variant
+/// (which would fail too, since the input is an object, not a string) or by
+/// a permissive predicate variant absorbing it.
+#[test]
+fn clears_when_unknown_predicate_type_fails_to_deserialize() {
+    let raw = r#"{"type":"nonsense"}"#;
+    let result: Result<ClearsWhenPredicate, _> = serde_json::from_str(raw);
+    assert!(
+        result.is_err(),
+        "an unknown `type` must fail to parse as ClearsWhenPredicate, got: {result:?}"
+    );
+
+    // Also confirm the untagged ClearsWhen wrapper fails the same way (an
+    // object input can't become Prose, and can't become a Predicate either).
+    let wrapped: Result<ClearsWhen, _> = serde_json::from_str(raw);
+    assert!(
+        wrapped.is_err(),
+        "an unknown `type` must fail to parse as ClearsWhen, got: {wrapped:?}"
+    );
+}
+
+/// `priority` / `blocks` / `finding_id` round-trip unchanged: a `blocks`
+/// array carrying one `block` edge and one `external` edge, alongside a
+/// `priority` and a `finding_id`, survives deserialize -> serialize.
+#[test]
+fn carryover_triage_fields_round_trip() {
+    let raw = r#"{
+        "slug": "ba15-12-mev-context-seed",
+        "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+        "kind": "deferred",
+        "text": "seed mev context",
+        "related": [],
+        "priority": 1,
+        "blocks": [
+            {"type": "block", "repo": "mev", "id": "MV.2.A", "what": null},
+            {"type": "external", "what": "blocks every ticket run fleet-wide"}
+        ],
+        "finding_id": "shared-finding-42",
+        "clears_when": null,
+        "created": "2026-06-20"
+    }"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let carryover: Carryover = serde_json::from_str(raw).unwrap();
+    assert_eq!(carryover.priority, Some(1));
+    assert_eq!(carryover.blocks.len(), 2);
+    match &carryover.blocks[0] {
+        BlockedBy::Block { repo, id, what } => {
+            assert_eq!(repo, "mev");
+            assert_eq!(id, "MV.2.A");
+            assert_eq!(*what, None);
+        }
+        other => panic!("expected Block, got {other:?}"),
+    }
+    match &carryover.blocks[1] {
+        BlockedBy::External { what } => {
+            assert_eq!(what, "blocks every ticket run fleet-wide");
+        }
+        other => panic!("expected External, got {other:?}"),
+    }
+    assert_eq!(carryover.finding_id.as_deref(), Some("shared-finding-42"));
+
+    let round = serde_json::to_value(&carryover).unwrap();
+    assert_eq!(original, round);
+}
+
+/// Backward compatibility: a legacy carryover JSON object with NONE of the
+/// new keys (`priority`, `blocks`, `finding_id`) deserializes fine and
+/// re-serializes byte-identically — the guarantee for the 142 live entries
+/// authored before this block.
+#[test]
+fn carryover_without_new_keys_round_trips_byte_identically() {
+    let raw = r#"{
+        "slug": "ba15-12-mev-context-seed",
+        "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+        "kind": "deferred",
+        "text": "seed mev context",
+        "related": [],
+        "clears_when": "when the nextest hook actually fires in this repo",
+        "created": "2026-06-20"
+    }"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let carryover: Carryover = serde_json::from_str(raw).unwrap();
+    assert_eq!(carryover.priority, None);
+    assert!(carryover.blocks.is_empty());
+    assert_eq!(carryover.finding_id, None);
+
+    let round = serde_json::to_value(&carryover).unwrap();
+    assert_eq!(original, round);
+
+    let round_obj = round.as_object().unwrap();
+    assert!(
+        !round_obj.contains_key("priority"),
+        "priority must stay omitted when absent from the input"
+    );
+    assert!(
+        !round_obj.contains_key("blocks"),
+        "blocks must stay omitted when absent from the input"
+    );
+    assert!(
+        !round_obj.contains_key("finding_id"),
+        "finding_id must stay omitted when absent from the input"
+    );
 }

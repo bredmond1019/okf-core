@@ -221,6 +221,34 @@ fn carryover_default_has_no_phantom_keys() {
     );
 }
 
+/// Explicit named guard for the three triage fields added alongside typed
+/// `ClearsWhen`: a default `Carryover` must serialize WITHOUT `priority`,
+/// `blocks`, or `finding_id`. `carryover_default_has_no_phantom_keys` above
+/// already covers this by construction (those three names are simply absent
+/// from its `known_fields` list); the point of naming them here is that a
+/// future author who "tidies" their `#[serde(default, skip_serializing_if =
+/// ...)]` attributes to match `Carryover.related`'s legacy bare
+/// `#[serde(default)]` (`src/state.rs:496` at the time of writing) gets a
+/// failure that says exactly which field regressed, rather than a generic
+/// "unexpected key" message.
+#[test]
+fn carryover_default_omits_priority_blocks_finding_id() {
+    let value = serde_json::to_value(Carryover::default()).unwrap();
+    let obj = value.as_object().expect("expected a JSON object");
+    assert!(
+        !obj.contains_key("priority"),
+        "a default Carryover must omit `priority` (do not copy `related`'s bare #[serde(default)]): {value}"
+    );
+    assert!(
+        !obj.contains_key("blocks"),
+        "a default Carryover must omit `blocks` (do not copy `related`'s bare #[serde(default)]): {value}"
+    );
+    assert!(
+        !obj.contains_key("finding_id"),
+        "a default Carryover must omit `finding_id` (do not copy `related`'s bare #[serde(default)]): {value}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Test 3 — round-trip safety of the defaults.
 // ---------------------------------------------------------------------------
