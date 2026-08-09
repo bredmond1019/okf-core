@@ -7,12 +7,49 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-09T12:30:00-03:00"
+timestamp: "2026-08-09T17:34:45-03:00"
 ---
 
 # Log
 
 ## [2026-08-09]
+
+### Shapes for carryover triage — priority, derived blocking edges, and a typed `ClearsWhen`
+
+- **What:** Closed `OK.ticket.carryover-triage-fields` — block 1 of the cross-repo
+  `carryover-improvements` program, `/sdlc-task`, 5/5 tasks each on first attempt, in place on
+  `main` (`c7f0f95..e661a5b`). `Carryover` gains three optional fields — `priority: Option<u8>`
+  (authored *value if resolved*), `blocks: Vec<BlockedBy>` (edges to the work this entry blocks,
+  reusing the existing enum so `External { what }` covers targetless fleet-wide claims), and
+  `finding_id: Option<String>` (free-form shared identity, no registry). `clears_when` widened from
+  `Option<String>` to `Option<ClearsWhen>`: an untagged enum with `Prose(String)` **first**, then
+  four `#[serde(tag = "type")]` predicates — `block_closed`, `file_exists`, `file_contains`,
+  `command_exits_zero`. No `#[serde(other)]`, so a typo'd `type` is a parse error rather than a
+  silent downgrade to prose. Both enums re-exported from `src/lib.rs`; 11 new tests.
+- **Why:** `carryover[]` works as capture and fails as triage — ~20 entries/day in, 3 ever cleared,
+  and almost no `clears_when` value machine-checkable. Ranking, dedup and self-clearing all need
+  these shapes to exist first, in the one crate mev and bastion both depend on by path. This block
+  is shapes only: `src/` stays I/O-free and dependency-free (AGENT.md rule 3), and every bit of
+  evaluation belongs to mev.
+- **The constraint that shaped the work:** every new field uses
+  `#[serde(default, skip_serializing_if = …)]`, *not* the bare `#[serde(default)]` that neighbouring
+  `Carryover.related` still carries. Mirroring the legacy form would have emitted
+  `"priority": null, "blocks": [], "finding_id": null` into every carryover entry in every corpus on
+  the next `emit-state` — a fleet-wide diff conflicting with every concurrent lane. Both churn
+  guards (`carryover_default_has_no_phantom_keys`, `clean_file_is_byte_identical`) pass **unedited**.
+  For the same reason in reverse, `clears_when` kept its bare `#[serde(default)]` — only the type
+  widened; adding `skip_serializing_if` there would have *deleted* `"clears_when": null` everywhere.
+- **Verified beyond the spec:** a throwaway probe deserialized every live `state.json` in the fleet
+  against the new types — **18 corpora, 135 carryover entries, 117 prose `clears_when` values, 0
+  typed, 0 parse failures.** Every existing prose predicate still lands in `ClearsWhen::Prose`. That
+  also corrects the program's inherited "142 entries / 14 repos" baseline, which mev's live-corpus
+  assertion should re-derive rather than trust.
+- **Deliberately untouched:** `docs/state/state-schema.md` and `tests/support/schema_floor.rs` —
+  both belong to `HQ.4.D`. The conformance gate fires when a *documented* field has no struct field
+  but tolerates the reverse, which is why the order is struct first, doc second.
+- **Refs:** `planning/ticket-carryover-triage-fields/tasks.md`,
+  `planning/orchestration-run/review.md`, `planning/orchestration-run/notes.md`,
+  `<BRAIN_ROOT>/planning/carryover-improvements/roadmap.md`
 
 ### A floor for the conformance gate — the gate that could stop checking
 
