@@ -5,5 +5,6 @@
 // `tests/`, rather than an independent target.
 
 pub mod schema_doc;
+pub mod schema_floor;
 pub mod schema_parse;
 pub mod struct_probe;
