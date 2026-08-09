@@ -151,6 +151,52 @@ fn backticked_identifiers(cell: &str) -> Vec<String> {
 /// whose Bucket cell contains "Derived", normalised via
 /// [`trailing_field_name`] so the set is comparable to bare struct/doc
 /// field names.
+///
+/// ## Count-floor disposition (`ticket-conformance-field-count-floor`, task 5)
+///
+/// The header match at the bottom of this function (`| Bucket | Fields |
+/// Who writes it |`) is the SAME exact-string fragility as
+/// `parse_field_tables`'s `| Field | Shape | Meaning |` match — a doc
+/// reformat of this one table can silently drop rows here too, shrinking
+/// the returned set.
+///
+/// **Disposition: no count floor added here.** Unlike `parse_field_tables`,
+/// this function's failure mode is (in the cases this repo actually has
+/// today) already LOUD, not silent, so it does not need the same fix:
+///
+/// - A field that drops out of the derived set is no longer exempted by
+///   `is_derived` in `schema_conformance.rs`'s `check_struct`, so it gets
+///   checked against its mapped struct like any authored field.
+/// - Both derived fields this repo documents today (`tasks`, `focus`) are
+///   documented as derived *because* they are deliberately absent from
+///   their mapped structs (`TrackBlock` has no `tasks` field — see
+///   `derived_fields_are_exempt` in `schema_conformance.rs`, the regression
+///   guard for that exact fact). So a narrowing that drops `tasks` out of
+///   the derived set makes `check_struct` immediately raise a violation
+///   ("documented field `tasks` ... has no corresponding field on struct
+///   `TrackBlock`") — the gate goes red, not green-but-blind. That is
+///   already the loud, actionable failure this ticket's `parse_field_tables`
+///   fix exists to produce; nothing here needs to manufacture it.
+/// - A floor keyed by "expected derived-field count" would ALSO need its
+///   own canonical source, sitting outside the four struct-mapped sections
+///   `schema_floor::expected_field_count` covers (`Block vocabulary`,
+///   `backlog[]`, `epics[]`, `carryover[]`) — this table lives under its own
+///   `Authored vs derived` section, not one of those four. Adding a second,
+///   differently-shaped floor mechanism for a fragility that is already
+///   loud would be exactly the kind of unowned, speculative surface this
+///   ticket's Notes section warns against ("the floor is a floor, not an
+///   equality" — and here there is no silence to floor against).
+///
+/// **What this disposition does NOT cover** — the residual, narrower gap:
+/// if a derived field's bare name ever coincidentally matches a field
+/// ALSO present (with a compatible shape) on its mapped struct, a
+/// narrowing that drops that field from the derived set would go silent —
+/// `check_struct` would find the struct field and pass, exactly like the
+/// gap this whole ticket exists to close. Today's two derived fields
+/// (`tasks`, `focus`) do not collide this way, and `derived_fields_are_exempt`
+/// pins that fact for `tasks`; if a future derived field is ever added
+/// that DOES coincide with a struct field name, revisit this disposition
+/// rather than assuming the loudness still holds.
 pub fn parse_derived_fields(doc: &str) -> BTreeSet<String> {
     let mut derived = BTreeSet::new();
     let mut current_section = String::new();
@@ -262,6 +308,32 @@ mod tests {
         assert!(
             derived.contains("focus"),
             "expected `focus` in derived field set: {derived:?}"
+        );
+    }
+
+    /// Regression pin for the task-5 disposition (see the doc comment on
+    /// `parse_derived_fields`): a malformed `Authored vs derived` table
+    /// header drops the derived rows entirely, same as `parse_field_tables`
+    /// would for a malformed `| Field | Shape | Meaning |` header. Recorded
+    /// here so the disposition's premise — "the header match is fragile
+    /// the same way" — stays proven rather than asserted in prose only.
+    /// (Whether that narrowing surfaces LOUDLY downstream is a
+    /// `schema_conformance.rs`-level concern, checked by
+    /// `derived_fields_are_exempt` there — out of scope for this file.)
+    #[test]
+    fn malformed_derived_table_header_drops_all_derived_rows() {
+        let doc = "\
+## Authored vs derived
+
+| Bucket | Fields | Who writes it | Extra Column |
+|---|---|---|---|
+| **Derived** | `tasks`, `focus` | derived from tasks[] |  |
+";
+        let derived = parse_derived_fields(doc);
+        assert!(
+            derived.is_empty(),
+            "expected a malformed header (extra column) to drop the derived \
+             table's rows entirely, got: {derived:?}"
         );
     }
 
