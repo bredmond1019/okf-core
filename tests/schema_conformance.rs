@@ -219,126 +219,157 @@ fn schema_struct_conformance() {
     );
 }
 
-// ─── Fixture-driven load-bearing test triple (ticket-conformance-field-count-floor, task 4) ───
+// ─── Fixture-driven floor tests (ticket-conformance-field-name-floor, task 3) ───
 //
-// A floor set too high and a floor set too low both pass a single-direction
-// suite. These tests land the OTHER directions the red-first observation in
-// task 3 (see tasks.md's Amendment Log) proved were missing:
-//   - a fixture with one extra, DERIVED-exempt field must still PASS
-//     (legitimate schema growth is not a failure);
-//   - a fixture with zero parseable tables must still fail loudly, exactly
-//     as the old `!is_empty()` asserts did;
-//   - a fixture narrowing exactly one of the four mapped sections by one
-//     row (parses >=1, fewer than its floor) must trip exactly one
-//     violation, naming that section — repeated for ALL FOUR sections
-//     rather than one representative, since building each is mechanical
-//     (see `fixture_doc` below).
+// The floor stores expected field NAMES and asserts they are a subset of
+// the parsed names, so these fixtures are built from the real name lists in
+// `schema_floor::expected_field_names` — never from a re-hardcoded literal
+// and never from a row COUNT. A count-shaped fixture (N copies of one row)
+// would satisfy the old floor and fail this one, which is the whole point
+// of the change.
 //
-// Every fixture here is fully self-contained synthetic markdown — never a
-// derivative of the brain's real `docs/state/state-schema.md` — so these
-// tests stay stable across edits to that external doc. They read the real
-// per-section floors from `schema_floor::expected_field_names` (never a
-// re-hardcoded literal), so a future change to those floors updates these
-// fixtures' row counts automatically instead of silently decoupling from
-// the source of truth these tests exist to exercise.
+// Directions covered, because a floor that only ever fails and a floor that
+// only ever passes both look correct under a single-direction suite:
+//   - baseline: every section fully documented must PASS;
+//   - one row deleted must FAIL, naming the deleted field;
+//   - one row deleted while two are added (the OFFSETTING case the count
+//     floor passed) must FAIL, naming the deleted field;
+//   - a field added and none removed (legitimate growth) must PASS with no
+//     edit to `schema_floor.rs` — this is the drift fix's regression guard;
+//   - zero parseable tables must FAIL loudly for all four sections.
+//
+// Every fixture marks all of its emitted fields DERIVED in a synthetic
+// `## Authored vs derived` table. That makes `check_struct` a no-op for
+// them, so a fixture can only ever fail on `check_field_name_floor` and
+// these tests stay isolated from struct-conformance concerns.
 
-/// The four sections the gate maps to a struct, each paired with ONE
-/// struct-valid field name/shape that `check_struct` will find present on
-/// the matching struct. The parser and `check_struct` do not dedupe by
-/// field name, so repeating a single valid row N times isolates the NAME
-/// floor from struct-conformance concerns — a fixture built this way can
-/// never fail on `check_struct`, only on `check_field_name_floor`.
-const FIXTURE_SECTIONS: [(&str, &str, &str); 4] = [
-    ("Block vocabulary", "id", "string"),
-    ("backlog[]", "slug", "string"),
-    ("epics[]", "slug", "string"),
-    ("carryover[]", "slug", "string"),
-];
+/// The four sections the gate maps to a struct.
+const FIXTURE_SECTIONS: [&str; 4] = ["Block vocabulary", "backlog[]", "epics[]", "carryover[]"];
 
-/// Build a self-contained fixture doc covering all four mapped sections,
-/// each populated with exactly its real floor's row count (from
-/// `schema_floor::expected_field_names`).
+/// Build a self-contained fixture doc covering all four mapped sections.
 ///
-/// - `narrow`: if `Some(section_heading)`, that section gets `floor - 1`
-///   rows instead of `floor` — a table whose header parses fine but has one
-///   fewer row than documented, the exact "partial drop" failure mode this
-///   ticket exists to catch (see `schema_parse.rs:82`'s per-row
-///   conditional collection).
-/// - `extra_derived`: if `Some((section_heading, extra_field_name))`, that
-///   section gets ONE additional row beyond its floor, and a synthetic `##
-///   Authored vs derived` table is appended marking that extra field name
-///   as derived — so `check_struct` exempts it and only the name floor is
-///   exercised, matching "the doc legitimately documents a new field."
-fn fixture_doc(narrow: Option<&str>, extra_derived: Option<(&str, &str)>) -> String {
+/// Each section starts from its real floor list
+/// (`schema_floor::expected_field_names`); `mutate` may then drop or add
+/// names for that section. Every name that ends up emitted is also written
+/// into a synthetic `## Authored vs derived` table, so `check_struct`
+/// exempts it and only the name floor is exercised.
+fn fixture_doc(mutate: impl Fn(&str, &mut Vec<String>)) -> String {
     let mut doc = String::new();
     let mut derived_rows = String::new();
 
-    for (heading, field, shape) in FIXTURE_SECTIONS {
-        let floor = expected_field_names(heading).len();
-        let mut rows = floor;
-        if narrow == Some(heading) {
-            rows -= 1;
-        }
+    for heading in FIXTURE_SECTIONS {
+        let mut names: Vec<String> = expected_field_names(heading)
+            .iter()
+            .map(|n| (*n).to_string())
+            .collect();
+        mutate(heading, &mut names);
 
         doc.push_str(&format!(
             "## {heading}\n\n| Field | Shape | Meaning |\n|---|---|---|\n"
         ));
-        for _ in 0..rows {
-            doc.push_str(&format!("| `{field}` | {shape} | fixture row. |\n"));
-        }
-        if let Some((extra_heading, extra_field)) = extra_derived
-            && extra_heading == heading
-        {
-            doc.push_str(&format!(
-                "| `{extra_field}` | string? | fixture derived extra field. |\n"
-            ));
-            derived_rows.push_str(&format!("| **Derived** | `{extra_field}` | fixture |\n"));
+        for name in &names {
+            doc.push_str(&format!("| `{name}` | string | fixture row. |\n"));
+            derived_rows.push_str(&format!("| **Derived** | `{name}` | fixture |\n"));
         }
         doc.push('\n');
     }
 
-    if !derived_rows.is_empty() {
-        doc.push_str(
-            "## Authored vs derived\n\n| Bucket | Fields | Who writes it |\n|---|---|---|\n",
-        );
-        doc.push_str(&derived_rows);
-    }
-
+    doc.push_str("## Authored vs derived\n\n| Bucket | Fields | Who writes it |\n|---|---|---|\n");
+    doc.push_str(&derived_rows);
     doc
 }
 
-/// Every mapped section documented at exactly its floor: the gate passes.
-/// This is the `>=` boundary itself — a floor that were accidentally `>`
-/// would fail this.
+/// Baseline: every mapped section fully documented. Confirms the fixture
+/// plumbing itself (including the synthetic derived table that neutralises
+/// `check_struct`) produces a clean run, so a failure in any test below is
+/// attributable to that test's mutation and not to the harness.
 #[test]
-fn floor_fixture_at_exactly_the_floor_passes() {
-    let doc = fixture_doc(None, None);
+fn floor_fixture_fully_documented_passes() {
+    let doc = fixture_doc(|_, _| {});
     let violations = run_conformance_check(&doc);
     assert!(
         violations.is_empty(),
-        "a fixture with every mapped section at exactly its floor should pass; got: {violations:?}"
+        "a fixture documenting every field in every mapped section should pass; got: {violations:?}"
     );
 }
 
-/// Legitimate growth: a fixture documenting one EXTRA field (marked
-/// derived, so struct-conformance is not in play) in `Block vocabulary`
-/// must still pass. Without this, the next real schema addition turns the
-/// gate red for a correct change.
+/// A single deleted row is caught, and the violation NAMES the field that
+/// disappeared. This is the case the count floor also caught, but only as a
+/// bare number — the name is what makes the failure actionable.
 #[test]
-fn floor_fixture_with_extra_derived_field_passes() {
-    let doc = fixture_doc(None, Some(("Block vocabulary", "extra_growth_field")));
+fn floor_catches_a_single_deleted_row_and_names_the_field() {
+    let doc = fixture_doc(|heading, names| {
+        if heading == "carryover[]" {
+            names.retain(|n| n != "clears_when");
+        }
+    });
+    let violations = run_conformance_check(&doc);
+
+    assert_eq!(
+        violations.len(),
+        1,
+        "deleting one `carryover[]` row should trip exactly one violation; got: {violations:?}"
+    );
+    assert!(
+        violations[0].contains("section `carryover[]`") && violations[0].contains("clears_when"),
+        "the violation must name both the section and the missing field `clears_when`; \
+         got: {violations:?}"
+    );
+}
+
+/// The OFFSETTING case, and the reason this ticket exists: one documented
+/// field is dropped while two new ones are added, so the section's row
+/// COUNT rises. The old count floor passed this fixture — every field
+/// silently stopped being checked while the gate stayed green. The name
+/// floor fails it, naming the dropped field.
+#[test]
+fn floor_catches_a_drop_masked_by_a_larger_addition() {
+    let doc = fixture_doc(|heading, names| {
+        if heading == "Block vocabulary" {
+            names.retain(|n| n != "note");
+            names.push("newly_added_field_one".to_string());
+            names.push("newly_added_field_two".to_string());
+        }
+    });
+    let violations = run_conformance_check(&doc);
+
+    assert_eq!(
+        violations.len(),
+        1,
+        "dropping one field while adding two should still trip exactly one violation \
+         (the net row count rises, which is what defeated the count floor); got: {violations:?}"
+    );
+    assert!(
+        violations[0].contains("section `Block vocabulary`") && violations[0].contains("note"),
+        "the violation must name the dropped field `note`, not merely report a count; \
+         got: {violations:?}"
+    );
+}
+
+/// Legitimate growth: a section documents one more field than the floor
+/// lists, and nothing is removed. This must PASS with `schema_floor.rs`
+/// untouched — that is the drift fix. Under the old count floor this
+/// direction was safe but the floor silently went stale; under the name
+/// floor it needs no maintenance at all.
+#[test]
+fn floor_allows_growth_without_a_floor_edit() {
+    let doc = fixture_doc(|heading, names| {
+        if heading == "carryover[]" {
+            names.push("a_newly_documented_field".to_string());
+        }
+    });
     let violations = run_conformance_check(&doc);
     assert!(
         violations.is_empty(),
-        "a fixture with one extra DOCUMENTED+DERIVED field should pass — \
-         legitimate growth is not a failure; got: {violations:?}"
+        "documenting a NEW field without removing any is legitimate growth and must pass \
+         with no edit to schema_floor.rs; got: {violations:?}"
     );
 }
 
 /// Total parse failure: headings present, no `| Field | Shape | Meaning |`
-/// table under any of the four mapped sections. Must still fail, with a
-/// message at least as actionable as the old `!is_empty()` asserts — the
-/// floor must not weaken the case that already worked.
+/// table under any mapped section. Must fail for all four, and each
+/// violation must name that section's missing fields rather than report a
+/// bare observed count.
 #[test]
 fn floor_fixture_with_zero_parseable_tables_fails_loudly() {
     let doc = "## Block vocabulary\n\nNo table here — total parser failure fixture.\n\n\
@@ -346,44 +377,56 @@ fn floor_fixture_with_zero_parseable_tables_fails_loudly() {
                ## epics[]\n\nNo table here.\n\n\
                ## carryover[]\n\nNo table here.\n";
     let violations = run_conformance_check(doc);
+
     assert_eq!(
         violations.len(),
         4,
         "expected one floor violation per mapped section on total parse failure; got: {violations:?}"
     );
-    for (heading, ..) in FIXTURE_SECTIONS {
-        assert!(
-            violations
-                .iter()
-                .any(|v| v.contains(&format!("section `{heading}`"))
-                    && v.contains("parsed only 0 field")),
-            "expected a floor violation naming `{heading}` with 0 observed fields; got: {violations:?}"
-        );
+    for heading in FIXTURE_SECTIONS {
+        let violation = violations
+            .iter()
+            .find(|v| v.contains(&format!("section `{heading}`")))
+            .unwrap_or_else(|| {
+                panic!("expected a violation naming `{heading}`; got: {violations:?}")
+            });
+        for name in expected_field_names(heading) {
+            assert!(
+                violation.contains(name),
+                "the `{heading}` violation must name every missing field (missing `{name}`); \
+                 got: {violation}"
+            );
+        }
     }
 }
 
-/// Narrowing is caught, repeated for each of the four mapped sections
-/// (rather than justifying one representative — building each fixture is
-/// mechanical via `fixture_doc`, so full coverage costs nothing extra): a
-/// section with `floor - 1` rows (table header intact, one row silently
-/// dropped, exactly like `parse_field_tables`'s conditional row collection
-/// under a reformatted table) trips exactly one violation, naming that
-/// section, while the other three sections — still at their own floor —
-/// stay clean.
+/// Narrowing is caught for each mapped section in turn — building each
+/// fixture is mechanical, so full coverage costs nothing over picking one
+/// representative. Each section loses its first documented field; that
+/// section trips exactly one violation naming the field, and the other
+/// three stay clean.
 #[test]
 fn floor_narrowing_is_caught_for_each_mapped_section() {
-    for (heading, ..) in FIXTURE_SECTIONS {
-        let doc = fixture_doc(Some(heading), None);
+    for heading in FIXTURE_SECTIONS {
+        let dropped = expected_field_names(heading)[0];
+        let doc = fixture_doc(|h, names| {
+            if h == heading {
+                names.retain(|n| n != dropped);
+            }
+        });
         let violations = run_conformance_check(&doc);
+
         assert_eq!(
             violations.len(),
             1,
-            "narrowing `{heading}` by one row should trip exactly one floor \
-             violation (the other three sections stay at their own floor); got: {violations:?}"
+            "narrowing `{heading}` by one field should trip exactly one violation \
+             (the other three sections stay fully documented); got: {violations:?}"
         );
         assert!(
-            violations[0].contains(&format!("section `{heading}`")),
-            "expected the single violation to name `{heading}`; got: {violations:?}"
+            violations[0].contains(&format!("section `{heading}`"))
+                && violations[0].contains(dropped),
+            "expected the violation to name `{heading}` and its dropped field `{dropped}`; \
+             got: {violations:?}"
         );
     }
 }

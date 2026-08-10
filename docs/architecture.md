@@ -233,27 +233,40 @@ hole that twice deleted authored `TrackBlock.note` values (2026-08-02, 2026-08-0
   documented field with no struct field is only a defect when it is authored — a derived field
   missing from the struct is expected and exempt (`derived_fields_are_exempt` in
   `tests/schema_conformance.rs` is the regression test for this rule).
-- **Field-count floor (`OK.ticket.conformance-field-count-floor`):** the section asserts used to
-  be `!fields.is_empty()` — a floor of *one*. That catches a parser returning nothing; it does not
+- **Field-name floor (`OK.ticket.conformance-field-name-floor`):** the section asserts began as
+  `!fields.is_empty()` — a floor of *one*. That catches a parser returning nothing; it does not
   catch a parser returning *some*. Because the table match at `tests/support/schema_parse.rs:98` is
   exact string equality on `| Field | Shape | Meaning |`, a doc reformat can drop most of a
   section's rows while one still parses: the assert passed, `check_struct` dutifully verified the
   survivors, and the gate reported green over a silently narrowed scope — the same
-  stops-checking-quietly failure this gate exists to eliminate, recurring one layer down.
-  `check_field_count_floor` now compares each section's parsed count against a per-section floor
-  from `tests/support/schema_floor.rs` (`Block vocabulary` 14, `` backlog[] `` 12, `` epics[] `` 7,
-  `` carryover[] `` 9). Shortfalls accumulate into the same `violations` vector `check_struct`
-  uses, so one run reports every short section, and the message names the section, the observed
-  count, the floor, and the floor's origin — a reformatted doc and a legitimately grown schema have
-  opposite fixes.
-  - It is a **floor, not an equality**: `>=` trips on narrowing and stays quiet on legitimate
-    growth. An exact count would turn every honest schema addition red and train people to bump
-    the number without reading it.
-  - **What it cannot catch:** one edit that adds N fields to a section while dropping N or fewer
-    via a reformat — the net count clears the floor and nothing fails. Catching that needs a floor
-    keyed on field *names*, which is deliberately out of scope here.
-  - The floor is a hand-maintained table, so legitimate doc growth does not auto-bump it. An
-    untightened floor stays safe, just loose.
+  stops-checking-quietly failure this gate exists to eliminate, recurring one layer down. A
+  per-section *count* floor replaced those asserts, and a per-section **name** floor has now
+  replaced the counts.
+
+  `check_field_name_floor` compares each section's parsed field names against the expected name
+  list in `tests/support/schema_floor.rs` (`expected_field_names`), asserting the expected list is
+  a **subset** of what parsed. Missing names accumulate into the same `violations` vector
+  `check_struct` uses, so one run reports every short section, and each message names the section,
+  every missing field, and the floor's origin — a reformatted doc and a deliberately removed field
+  have opposite fixes.
+  - It is a **floor, not an equality**: a section may document *more* than the list without
+    failing. An exact match would turn every honest schema addition red and train people to edit
+    the list without reading it.
+  - **Legitimate growth needs no edit.** This is why names replaced counts. Under the count floor,
+    growth left the number stale and tightening it was a manual four-site edit — `carryover[]`
+    growing 9 → 12 cost its own task (`c99d21d`), and this very document went on claiming a floor
+    of 9 until the name floor landed. Under the name floor the list changes only on deliberate
+    *removal*.
+  - **Now caught, which counts missed:** an edit that drops one documented field while adding two
+    others. The section's row count *rises*, so a count floor stays green while a real field
+    silently stops being checked. `floor_catches_a_drop_masked_by_a_larger_addition` pins this;
+    the ticket's Amendment Log records the same fixture passing (exit 0) against the count floor
+    and failing (exit 101) against the name floor. A plain row deletion is likewise caught, where
+    before it removed the field from the parse entirely and left `check_struct` nothing to iterate.
+  - **What it still cannot catch:** a field renamed in the doc, the struct, and the floor list in
+    one edit — nothing short of review catches that, and it is visible in the diff, not silent.
+    Separately, the floor covers exactly the four sections `section_matches` maps to a struct, so a
+    *fifth* authored section appearing in the doc is still unnoticed by any gate.
 - **Doc location:** `tests/support/schema_doc.rs` ascends parent directories from
   `CARGO_MANIFEST_DIR` looking for `docs/state/state-schema.md`, so it resolves correctly from
   both the main tree and a `core/okf-core/trees/<name>/` worktree with no hardcoded depth. Set
