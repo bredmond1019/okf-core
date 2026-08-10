@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use okf_core::{Backlog, Carryover, Epic, TrackBlock};
 
 use support::schema_doc::read_schema_doc;
-use support::schema_floor::expected_field_count;
+use support::schema_floor::expected_field_names;
 use support::schema_parse::{
     DocumentedField, is_derived, parse_derived_fields, parse_field_tables,
 };
@@ -105,34 +105,41 @@ fn check_struct<T>(
     }
 }
 
-/// Check that `fields` (the fields parsed under `section`) meet or exceed
-/// the canonical floor from `schema_floor::expected_field_count`, pushing a
-/// violation onto `violations` rather than panicking immediately — this
-/// matches `check_struct`'s accumulate-don't-panic-on-first shape, so a run
-/// that narrows multiple sections at once surfaces all of them, not just
-/// the first.
+/// Check that `fields` (the fields parsed under `section`) cover every name
+/// in the canonical floor from `schema_floor::expected_field_names`, pushing
+/// ONE violation naming every missing field onto `violations` rather than
+/// panicking immediately — this matches `check_struct`'s
+/// accumulate-don't-panic-on-first shape, so a run that narrows multiple
+/// sections at once surfaces all of them, not just the first.
 ///
-/// This replaces the old `!fields.is_empty()` asserts, which were a floor
-/// of ONE: enough to catch total parser failure, not enough to catch
-/// PARTIAL parser failure (a doc reformat that drops most, but not all, of
-/// a section's rows). See `schema_floor.rs`'s module doc comment for why
-/// the floor is derived from an explicit per-section table rather than
-/// hardcoded at each of the four call sites.
-fn check_field_count_floor(
+/// This is a SUBSET check, not an equality: `fields` may legitimately be a
+/// strict superset of the stored names (growth needs no edit to
+/// `schema_floor.rs`), but every stored name must appear among the parsed
+/// names. It replaces the old count-based floor, which could not catch an
+/// offsetting add/drop in the same doc edit, nor name which field a plain
+/// row deletion removed. See `schema_floor.rs`'s module doc comment for the
+/// full rationale.
+fn check_field_name_floor(
     section: &str,
     fields: &[&DocumentedField],
     violations: &mut Vec<String>,
 ) {
-    let observed = fields.len();
-    let floor = expected_field_count(section);
-    if observed < floor {
+    let observed: BTreeSet<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+    let missing: Vec<&str> = expected_field_names(section)
+        .iter()
+        .copied()
+        .filter(|name| !observed.contains(name))
+        .collect();
+    if !missing.is_empty() {
         violations.push(format!(
-            "section `{section}` parsed only {observed} field(s), expected at least {floor} \
-             (floor from `schema_floor::expected_field_count`, a per-section table hand-derived \
-             from `docs/state/state-schema.md`) — either the doc's `| Field | Shape | Meaning |` \
-             table for this section was reformatted and rows were silently dropped by the parser \
-             (check schema_parse.rs's exact header match), or the section legitimately shrank and \
-             the floor in `schema_floor.rs` needs a deliberate, reviewed lowering"
+            "section `{section}` is missing {} documented field(s): {} (floor from \
+             `schema_floor::expected_field_names`, a per-section table hand-derived from \
+             `docs/state/state-schema.md`) — either the doc's `| Field | Shape | Meaning |` table \
+             for this section was reformatted and rows were silently dropped by the parser (check \
+             schema_parse.rs's exact header match), or the fields were deliberately removed from \
+             the schema and `schema_floor.rs` needs a deliberate, reviewed edit",
+            missing.len(),
+            missing.join(", ")
         ));
     }
 }
@@ -153,7 +160,7 @@ fn run_conformance_check(doc: &str) -> Vec<String> {
         .iter()
         .filter(|f| section_matches(&f.section, "Block vocabulary"))
         .collect();
-    check_field_count_floor("Block vocabulary", &block_vocabulary, &mut violations);
+    check_field_name_floor("Block vocabulary", &block_vocabulary, &mut violations);
     check_struct::<TrackBlock>(
         track_block_seed(),
         &block_vocabulary,
@@ -166,7 +173,7 @@ fn run_conformance_check(doc: &str) -> Vec<String> {
         .iter()
         .filter(|f| section_matches(&f.section, "backlog[]"))
         .collect();
-    check_field_count_floor("backlog[]", &backlog_fields, &mut violations);
+    check_field_name_floor("backlog[]", &backlog_fields, &mut violations);
     check_struct::<Backlog>(
         backlog_seed(),
         &backlog_fields,
@@ -179,14 +186,14 @@ fn run_conformance_check(doc: &str) -> Vec<String> {
         .iter()
         .filter(|f| section_matches(&f.section, "epics[]"))
         .collect();
-    check_field_count_floor("epics[]", &epic_fields, &mut violations);
+    check_field_name_floor("epics[]", &epic_fields, &mut violations);
     check_struct::<Epic>(epic_seed(), &epic_fields, &derived, "Epic", &mut violations);
 
     let carryover_fields: Vec<&DocumentedField> = fields
         .iter()
         .filter(|f| section_matches(&f.section, "carryover[]"))
         .collect();
-    check_field_count_floor("carryover[]", &carryover_fields, &mut violations);
+    check_field_name_floor("carryover[]", &carryover_fields, &mut violations);
     check_struct::<Carryover>(
         carryover_seed(),
         &carryover_fields,
@@ -230,7 +237,7 @@ fn schema_struct_conformance() {
 // Every fixture here is fully self-contained synthetic markdown — never a
 // derivative of the brain's real `docs/state/state-schema.md` — so these
 // tests stay stable across edits to that external doc. They read the real
-// per-section floors from `schema_floor::expected_field_count` (never a
+// per-section floors from `schema_floor::expected_field_names` (never a
 // re-hardcoded literal), so a future change to those floors updates these
 // fixtures' row counts automatically instead of silently decoupling from
 // the source of truth these tests exist to exercise.
@@ -238,9 +245,9 @@ fn schema_struct_conformance() {
 /// The four sections the gate maps to a struct, each paired with ONE
 /// struct-valid field name/shape that `check_struct` will find present on
 /// the matching struct. The parser and `check_struct` do not dedupe by
-/// field name, so repeating a single valid row N times isolates the COUNT
+/// field name, so repeating a single valid row N times isolates the NAME
 /// floor from struct-conformance concerns — a fixture built this way can
-/// never fail on `check_struct`, only on `check_field_count_floor`.
+/// never fail on `check_struct`, only on `check_field_name_floor`.
 const FIXTURE_SECTIONS: [(&str, &str, &str); 4] = [
     ("Block vocabulary", "id", "string"),
     ("backlog[]", "slug", "string"),
@@ -250,7 +257,7 @@ const FIXTURE_SECTIONS: [(&str, &str, &str); 4] = [
 
 /// Build a self-contained fixture doc covering all four mapped sections,
 /// each populated with exactly its real floor's row count (from
-/// `schema_floor::expected_field_count`).
+/// `schema_floor::expected_field_names`).
 ///
 /// - `narrow`: if `Some(section_heading)`, that section gets `floor - 1`
 ///   rows instead of `floor` — a table whose header parses fine but has one
@@ -260,14 +267,14 @@ const FIXTURE_SECTIONS: [(&str, &str, &str); 4] = [
 /// - `extra_derived`: if `Some((section_heading, extra_field_name))`, that
 ///   section gets ONE additional row beyond its floor, and a synthetic `##
 ///   Authored vs derived` table is appended marking that extra field name
-///   as derived — so `check_struct` exempts it and only the count floor is
+///   as derived — so `check_struct` exempts it and only the name floor is
 ///   exercised, matching "the doc legitimately documents a new field."
 fn fixture_doc(narrow: Option<&str>, extra_derived: Option<(&str, &str)>) -> String {
     let mut doc = String::new();
     let mut derived_rows = String::new();
 
     for (heading, field, shape) in FIXTURE_SECTIONS {
-        let floor = expected_field_count(heading);
+        let floor = expected_field_names(heading).len();
         let mut rows = floor;
         if narrow == Some(heading) {
             rows -= 1;
