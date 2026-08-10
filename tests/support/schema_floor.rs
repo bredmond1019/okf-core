@@ -1,4 +1,4 @@
-// Per-section field-count floor for the schema/struct conformance gate
+// Per-section field-NAME floor for the schema/struct conformance gate
 // (`3.1-schema-struct-conformance`).
 //
 // `schema_conformance.rs`'s four `!is_empty()` asserts are a floor of ONE —
@@ -30,78 +30,137 @@
 //     `TrackBlock.note` incident this whole gate exists to catch (see the
 //     module doc comment on `schema_conformance.rs`).
 //
-// (b) **An explicit per-section expected-count table, in one place** — not
-//     self-maintaining (a legitimate doc addition that pushes a section past
-//     its floor does not itself require a bump, because the check is `>=`,
-//     but TIGHTENING the floor to match new growth is a manual, deliberate
-//     edit), but honest and singular: one number per section, commented
-//     against the doc, in exactly one file. No four-call-site duplication,
-//     no reflection, no risk of the floor secretly depending on the same
-//     doc formatting it exists to protect against.
+// (b) **An explicit per-section expected-names table, in one place** — not
+//     self-maintaining for TIGHTENING (a legitimate doc removal that drops a
+//     documented field still requires a deliberate, reviewed edit here — that
+//     is the point, not a gap), but honest and singular: one list per
+//     section, in exactly one file. No four-call-site duplication, no
+//     reflection, no risk of the floor secretly depending on the same doc
+//     formatting it exists to protect against.
 //
-// (c) **A machine-readable count recorded inside `state-schema.md` itself**
+// (c) **A machine-readable list recorded inside `state-schema.md` itself**
 //     — rejected outright: that puts the floor in the SAME file whose
 //     reformat is the threat this gate defends against. A header rename
 //     that drops table rows could just as easily carry off a stray
-//     "expected count: N" annotation in the same edit, and now the floor
+//     "expected fields: ..." annotation in the same edit, and now the floor
 //     narrows in lockstep with the thing it is supposed to catch narrowing.
 //
-// **Chosen: (b).** The counts below were read off the current
-// `docs/state/state-schema.md` field tables (Block vocabulary = 14,
+// **Chosen: (b).** This ticket (`ticket-conformance-field-name-floor`)
+// replaces the previous COUNT floor's unit with NAMES, keeping the floor's
+// location unchanged — see that ticket's tasks.md and the Amendment Log on
+// `ticket-conformance-field-count-floor/tasks.md` (2026-08-09) for why the
+// location stays an explicit table here rather than the struct or the doc
+// itself. The names below were read off the current
+// `docs/state/state-schema.md` field tables (Block vocabulary = 14 names,
 // `backlog[]` = 12, `epics[]` = 7, `carryover[]` = 12) — every row currently
 // documented, not filtered to non-derived fields, because the floor guards
 // the PARSE (what `parse_field_tables` returns), not the post-exemption
 // conformance check that runs on top of it.
 //
+// ## Subset semantics, not equality
+//
+// The floor asserts that every NAME stored here appears among the names
+// `parse_field_tables` actually observed for that section — it is a subset
+// check, not an equality check. A section with MORE documented fields than
+// its stored list is legitimate growth, not a failure, and growth requires
+// NO edit to this file: the new field simply appears in `observed` without a
+// corresponding entry in `expected`, and the subset relation still holds.
+// This is what fixes the drift the old count floor had — under `>=`, growth
+// silently loosened the floor and TIGHTENING it back up was a manual,
+// four-site edit (commit `c99d21d`, when `carryover[]` grew 9 -> 12). Under
+// a name-based subset check there is nothing to tighten: the list only
+// changes on a deliberate, reviewed field REMOVAL.
+//
 // ## What this floor CANNOT catch
 //
-// A static floor cannot distinguish "legitimate growth exactly offsetting a
-// narrowing" from "no change": if a section gains two genuinely new fields
-// in the SAME doc edit that also drops one existing field to a reformatted
-// table, the observed count (net +1) still clears the old floor and nothing
-// fails, even though a real field silently stopped being checked. Catching
-// that would require a floor that tracks specific field NAMES, not just a
-// count — a heavier design this ticket's fixture-driven test triple does not
-// require and the ticket's Notes section warns against ("the floor is a
-// floor, not an equality"). Two narrower, related gaps: this floor is not
-// bumped automatically when the doc legitimately grows a section (a human
-// has to notice and choose to tighten it, though the untightened `>=` floor
-// keeps passing either way, so nothing is unsafe by leaving it loose); and
-// it is scoped to exactly the four sections `section_matches` maps to a
-// struct, per the ticket's stated out-of-scope.
+// The two gaps the old count floor had are now CLOSED: an offsetting
+// add/drop in the same doc edit (previously net-positive, so a count floor
+// never noticed) now fails, because the dropped name disappears from
+// `observed` regardless of how many other names were added; and a plain row
+// deletion now fails and names the missing field, rather than only degrading
+// a count that might still clear a stale floor.
+//
+// What remains uncatchable: a field renamed SIMULTANEOUSLY in the doc, the
+// mapped struct, and this floor's list, in one edit — nothing short of
+// review catches that, and it is not silent, since it appears in the diff.
+// Also unchanged from before: this floor is scoped to exactly the four
+// sections `section_matches` maps to a struct, per the ticket's stated
+// out-of-scope; a fifth authored section in the doc is still unmapped and
+// unnoticed by this floor (deferred to a separate "table census" item).
 
-/// The expected minimum number of documented field rows for a schema
-/// section, keyed by the same leading identifier `section_matches` (in
-/// `schema_conformance.rs`) uses to map a parsed heading to a struct:
-/// `Block vocabulary`, `backlog[]`, `epics[]`, `carryover[]`.
+/// The expected field names documented for a schema section, keyed by the
+/// same leading identifier `section_matches` (in `schema_conformance.rs`)
+/// uses to map a parsed heading to a struct: `Block vocabulary`, `backlog[]`,
+/// `epics[]`, `carryover[]`.
 ///
-/// This is a FLOOR (`>=`), not an equality — a section with MORE documented
-/// fields than its floor is legitimate growth, not a failure. See the
-/// module doc comment above for the rationale and the narrowing it cannot
-/// catch.
+/// This is a SUBSET floor, not an equality — every name returned here must
+/// appear among the section's parsed field names, but the parsed names may
+/// legitimately be a strict superset (growth needs no edit here). See the
+/// module doc comment above for the full rationale and what this still
+/// cannot catch.
 ///
 /// Panics on an unmapped section name: the four sections here are exactly
 /// the four `schema_struct_conformance` checks, so an unrecognised section
 /// is a caller bug (a typo'd identifier, or a fifth section added to the
 /// gate without updating this table), not a data condition to tolerate
 /// silently.
-pub fn expected_field_count(section: &str) -> usize {
+pub fn expected_field_names(section: &str) -> &'static [&'static str] {
     match section {
-        // 14 documented rows as of this writing: id, title, status, wave,
-        // depends_on, note, description, origin, tasks, priority, due,
-        // sdlc_workflow, model, epics.
-        "Block vocabulary" => 14,
-        // 12 documented rows: slug, title, repo, type, status, depends_on,
-        // block, notes, origin, created, reviewed, snoozed_until.
-        "backlog[]" => 12,
-        // 7 documented rows: slug, title, description, status, weight,
-        // plan, repos.
-        "epics[]" => 7,
-        // 12 documented rows: slug, scope, kind, text, related, clears_when,
-        // priority, blocks, finding_id, created, reviewed, snoozed_until.
-        "carryover[]" => 12,
+        "Block vocabulary" => &[
+            "id",
+            "title",
+            "status",
+            "wave",
+            "depends_on",
+            "note",
+            "description",
+            "origin",
+            "tasks",
+            "priority",
+            "due",
+            "sdlc_workflow",
+            "model",
+            "epics",
+        ],
+        "backlog[]" => &[
+            "slug",
+            "title",
+            "repo",
+            "type",
+            "status",
+            "depends_on",
+            "block",
+            "notes",
+            "origin",
+            "created",
+            "reviewed",
+            "snoozed_until",
+        ],
+        "epics[]" => &[
+            "slug",
+            "title",
+            "description",
+            "status",
+            "weight",
+            "plan",
+            "repos",
+        ],
+        "carryover[]" => &[
+            "slug",
+            "scope",
+            "kind",
+            "text",
+            "related",
+            "clears_when",
+            "priority",
+            "blocks",
+            "finding_id",
+            "created",
+            "reviewed",
+            "snoozed_until",
+        ],
         other => panic!(
-            "expected_field_count: unmapped section `{other}` — the count \
+            "expected_field_names: unmapped section `{other}` — the name \
              floor only covers the four sections `section_matches` maps to \
              a struct (`Block vocabulary`, `backlog[]`, `epics[]`, \
              `carryover[]`); if a new section needs a floor, add it here \
@@ -115,21 +174,83 @@ mod tests {
     use super::*;
 
     #[test]
-    fn returns_the_expected_floor_for_each_mapped_section() {
-        assert_eq!(expected_field_count("Block vocabulary"), 14);
-        assert_eq!(expected_field_count("backlog[]"), 12);
-        assert_eq!(expected_field_count("epics[]"), 7);
-        assert_eq!(expected_field_count("carryover[]"), 12);
+    fn returns_the_expected_names_for_each_mapped_section() {
+        assert_eq!(
+            expected_field_names("Block vocabulary"),
+            &[
+                "id",
+                "title",
+                "status",
+                "wave",
+                "depends_on",
+                "note",
+                "description",
+                "origin",
+                "tasks",
+                "priority",
+                "due",
+                "sdlc_workflow",
+                "model",
+                "epics",
+            ]
+        );
+        assert_eq!(
+            expected_field_names("backlog[]"),
+            &[
+                "slug",
+                "title",
+                "repo",
+                "type",
+                "status",
+                "depends_on",
+                "block",
+                "notes",
+                "origin",
+                "created",
+                "reviewed",
+                "snoozed_until",
+            ]
+        );
+        assert_eq!(
+            expected_field_names("epics[]"),
+            &[
+                "slug",
+                "title",
+                "description",
+                "status",
+                "weight",
+                "plan",
+                "repos"
+            ]
+        );
+        assert_eq!(
+            expected_field_names("carryover[]"),
+            &[
+                "slug",
+                "scope",
+                "kind",
+                "text",
+                "related",
+                "clears_when",
+                "priority",
+                "blocks",
+                "finding_id",
+                "created",
+                "reviewed",
+                "snoozed_until",
+            ]
+        );
     }
 
     #[test]
-    fn floors_are_all_at_least_one() {
-        // A floor of zero would defeat the point — it would tolerate total
-        // parser failure the same way the old `!is_empty()` assert did not.
+    fn lists_are_all_non_empty() {
+        // An empty list would defeat the point — it would tolerate total
+        // parser failure the same way the old `!is_empty()` assert did not,
+        // and the same way a floor of zero would under the count design.
         for section in ["Block vocabulary", "backlog[]", "epics[]", "carryover[]"] {
             assert!(
-                expected_field_count(section) >= 1,
-                "floor for `{section}` must be at least 1"
+                !expected_field_names(section).is_empty(),
+                "name list for `{section}` must be non-empty"
             );
         }
     }
@@ -137,6 +258,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "unmapped section")]
     fn panics_on_an_unmapped_section() {
-        expected_field_count("not a real section");
+        expected_field_names("not a real section");
     }
 }
