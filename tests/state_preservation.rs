@@ -570,3 +570,48 @@ fn carryover_without_new_keys_round_trips_byte_identically() {
         "finding_id must stay omitted when absent from the input"
     );
 }
+
+/// Shared operator identity across two unrelated blocks.
+///
+/// `tests/fixtures/operator-shared-slug.json` carries two blocks in the same
+/// track, each with an `operator` edge in `depends_on[]` naming the same
+/// `slug` (`session-mac-mini`) — one gate covering two blocks is the whole
+/// point of giving `Operator`/`Approval` an identity instead of leaving them
+/// as anonymous `external` prose. This pins that shared identity survives
+/// deserialization: both edges must come back as `BlockedBy::Operator` with
+/// equal `slug`s, not merely equal-looking independent structs.
+#[test]
+fn operator_edges_share_identity_across_two_blocks() {
+    let raw = include_str!("fixtures/operator-shared-slug.json");
+
+    let state: StateFile = serde_json::from_str(raw).unwrap();
+
+    assert_eq!(state.tracks.len(), 1);
+    let blocks = &state.tracks[0].blocks;
+    assert_eq!(blocks.len(), 2);
+
+    let slug_of = |block: &TrackBlock| -> String {
+        assert_eq!(block.depends_on.len(), 1);
+        match &block.depends_on[0] {
+            BlockedBy::Operator {
+                slug, exit, start, ..
+            } => {
+                assert_eq!(exit, "planning/mac-mini-session-notes.md exists");
+                assert_eq!(start, "bastion sessions new mac-mini");
+                slug.clone()
+            }
+            other => panic!("expected Operator, got {other:?}"),
+        }
+    };
+
+    let slug_a = slug_of(&blocks[0]);
+    let slug_b = slug_of(&blocks[1]);
+
+    assert_eq!(blocks[0].id, "OK.1.A");
+    assert_eq!(blocks[1].id, "OK.1.B");
+    assert_eq!(slug_a, "session-mac-mini");
+    assert_eq!(
+        slug_a, slug_b,
+        "the same operator gate must carry an identical slug on every block it covers"
+    );
+}

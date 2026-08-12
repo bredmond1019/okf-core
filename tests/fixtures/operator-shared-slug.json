@@ -1,0 +1,37 @@
+{
+  "repo": "hq",
+  "kind": "brain",
+  "updated": "2026-08-11",
+  "tracks": [
+    {
+      "title": "Phase 1",
+      "blocks": [
+        {
+          "id": "OK.1.A",
+          "title": "first block gated on the shared operator session",
+          "depends_on": [
+            {
+              "type": "operator",
+              "slug": "session-mac-mini",
+              "exit": "planning/mac-mini-session-notes.md exists",
+              "start": "bastion sessions new mac-mini",
+              "what": "needs the physical Mac Mini in front of the operator"
+            }
+          ]
+        },
+        {
+          "id": "OK.1.B",
+          "title": "second, unrelated block gated on the same operator session",
+          "depends_on": [
+            {
+              "type": "operator",
+              "slug": "session-mac-mini",
+              "exit": "planning/mac-mini-session-notes.md exists",
+              "start": "bastion sessions new mac-mini"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1067,14 +1067,16 @@ mod tests {
 
     #[test]
     fn operator_edge_missing_slug_is_rejected() {
-        let json = r#"{"type":"operator","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
+        let json =
+            r#"{"type":"operator","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
         let result: Result<BlockedBy, _> = serde_json::from_str(json);
         assert!(result.is_err());
     }
 
     #[test]
     fn operator_edge_missing_exit_is_rejected() {
-        let json = r#"{"type":"operator","slug":"session-mac-mini","start":"/begin-session mac-mini"}"#;
+        let json =
+            r#"{"type":"operator","slug":"session-mac-mini","start":"/begin-session mac-mini"}"#;
         let result: Result<BlockedBy, _> = serde_json::from_str(json);
         assert!(result.is_err());
     }
