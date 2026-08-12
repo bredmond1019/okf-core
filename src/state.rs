@@ -1050,6 +1050,71 @@ mod tests {
     }
 
     #[test]
+    fn old_session_type_name_is_rejected() {
+        // The `session` -> `operator` rename (2026-08-11) must not leave the old
+        // discriminant silently parseable as anything, including a no-op edge.
+        let json = r#"{"type":"session","slug":"session-mac-mini","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn operator_edge_missing_type_is_rejected() {
+        let json = r#"{"type":"operator"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn operator_edge_missing_slug_is_rejected() {
+        let json = r#"{"type":"operator","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn operator_edge_missing_exit_is_rejected() {
+        let json = r#"{"type":"operator","slug":"session-mac-mini","start":"/begin-session mac-mini"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn operator_edge_missing_start_is_rejected() {
+        let json = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/handoff.md"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn approval_edge_missing_type_is_rejected() {
+        let json = r#"{"type":"approval"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn approval_edge_missing_slug_is_rejected() {
+        let json = r#"{"type":"approval","what":"publish the four Dev.to tag edits","digest":"sha256:abcd1234"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn approval_edge_missing_what_is_rejected() {
+        let json = r#"{"type":"approval","slug":"approve-devto-sweep","digest":"sha256:abcd1234"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn approval_edge_missing_digest_is_rejected() {
+        let json = r#"{"type":"approval","slug":"approve-devto-sweep","what":"publish the four Dev.to tag edits"}"#;
+        let result: Result<BlockedBy, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn operator_edge_without_what_roundtrips() {
         let json = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
         let edge: BlockedBy = serde_json::from_str(json).unwrap();
