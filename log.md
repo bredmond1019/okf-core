@@ -7,10 +7,41 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-09T17:34:45-03:00"
+timestamp: "2026-08-11T23:27:09-03:00"
 ---
 
 # Log
+
+## [2026-08-11]
+
+### Operator work becomes a graph edge — `BlockedBy` gains `Operator` and `Approval`
+
+- **What:** Closed `OK.ticket.operator-edge-types` — section 1 of the `operator-surface`
+  roadmap's SUBSTRATE lane, `/sdlc-task`, 5/5 tasks, no bail, in place on `main`
+  (`91120d1`..`cdc2c0f`). `BlockedBy` gains two targetless-but-*identified* variants:
+  `Operator { slug, exit, start, what? }` and `Approval { slug, what, digest }`. Shapes only —
+  readiness, staleness, propagation and rendering all belong to `MV.ticket.operator-edge-graph`
+  in mev. 14 new tests (round-trips with and without the optional `what`, missing-field
+  rejections for both variants, a shared-slug fixture pinning one slug across two blocks, and a
+  guard that `build_state_graph` still skips both variants exactly as it skips `External`).
+  231 tests pass; all four harness gates green; corpus `validate_brain.sh` 0 errors.
+- **Why:** Work that needs the operator had no representation in the graph, so it rotted
+  silently. The only escape hatch was `{"type":"external"}` — no identity, so two blocks waiting
+  on one decision carried two unrelated prose strings; nothing could clear it; and `what`
+  described the dependency rather than what would end it. Once an operator step is an edge it
+  inherits the priority of everything it gates and appears in `focus.blocked[]` for free, via
+  the reverse-topological `min` propagation that already exists. No new surface, no new lane.
+- **Also:** The variant shipped as `operator`, not `session` — `bastion sessions` is the tmux CLI
+  and this roadmap makes both real in the same quarter. `{"type":"session"}` is now an explicit
+  parse rejection. `docs/architecture.md`'s state-module table gained the `BlockedBy` export it
+  had always been missing (`28ba7ac`).
+- **Consequence to know about:** mev (12 sites), bastion (≥1) and engine-rs (transitive) do not
+  compile until `MV.ticket.operator-edge-graph` lands, and that block is HELD on the operator
+  session `session-approval-gate-decision`. Expected and designed — the loud `E0004` is what the
+  deliberate absence of `#[serde(other)]` and of catch-all arms buys. Do not silence it.
+- **Refs:** `planning/ticket-operator-edge-types/tasks.md`;
+  `planning/orchestration-run/operator-surface/` (notes + review);
+  `<BRAIN_ROOT>/planning/operator-surface/roadmap.md`, lane `lane-substrate.txt` section 1.
 
 ## [2026-08-09]
 
