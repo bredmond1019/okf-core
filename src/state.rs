@@ -1272,6 +1272,60 @@ mod tests {
     }
 
     #[test]
+    fn build_state_graph_skips_operator_and_approval_edges() {
+        // Regression pin for the graph builder at build_state_graph: a block
+        // whose depends_on[] carries an operator edge and an approval edge
+        // must produce zero graph edges and zero nodes for those targetless
+        // entries — exactly as {type:external} is skipped today. If either
+        // new variant ever starts emitting an edge, it would point at a
+        // non-existent node and surface as a dangling reference.
+        let repo_a_json = r#"{
+            "repo": "a",
+            "kind": "project",
+            "updated": "2026-07-01",
+            "tracks": [
+                {
+                    "title": "Phase 1",
+                    "blocks": [
+                        {
+                            "id": "X",
+                            "title": "x",
+                            "depends_on": [
+                                {
+                                    "type": "operator",
+                                    "slug": "close-session-decision",
+                                    "exit": "planning/decision.md",
+                                    "start": "/begin-session close-session-decision"
+                                },
+                                {
+                                    "type": "approval",
+                                    "slug": "ship-it",
+                                    "what": "Ship the change",
+                                    "digest": "sha256:abc123"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let path_a = PathBuf::from("/repos/a/planning/state.json");
+        let file_a: StateFile = serde_json::from_str(repo_a_json).unwrap();
+        let files = vec![(state_source("a", &path_a), file_a)];
+
+        let graph = build_state_graph(&files);
+
+        // The one authored block is still a node...
+        assert_eq!(graph.nodes.len(), 1);
+        assert_eq!(graph.nodes[0].key, "a:X");
+        // ...but neither the operator edge nor the approval edge produced a
+        // graph edge, so there is nothing that could point at a dangling
+        // "close-session-decision" or "ship-it" node.
+        assert!(graph.edges.is_empty());
+    }
+
+    #[test]
     fn build_state_graph_cross_repo_edge() {
         let brain_json = r#"{
             "repo": "hq",
