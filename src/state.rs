@@ -61,6 +61,42 @@ pub enum BlockedBy {
         /// Human description of the external dependency.
         what: String,
     },
+    /// An operator working session that gates this block.
+    ///
+    /// Targetless — no node, skipped by dangling/cycle/topo logic — but
+    /// identified: a `slug` can be shared across several blocks so tooling
+    /// can find and clear the gate they are all waiting on. Named `operator`
+    /// rather than `session` to avoid colliding with `bastion sessions`
+    /// (the tmux CLI); this is a `depends_on` edge discriminant only.
+    Operator {
+        /// Kebab-case identifier. Shared across every block this gate
+        /// covers, giving otherwise-unrelated blocks a join key.
+        slug: String,
+        /// The artifact whose existence ends the session — the thing you
+        /// can point at afterwards, not a description of the work.
+        exit: String,
+        /// The command that starts the session, paste-ready.
+        start: String,
+        /// Optional gloss: why this particular block is gated on it.
+        #[serde(default)]
+        what: Option<String>,
+    },
+    /// A gated action awaiting a single operator decision.
+    ///
+    /// Targetless like `Operator` — no node, skipped by dangling/cycle/topo
+    /// logic — but identified via `slug` so tooling can find and clear it.
+    Approval {
+        /// Kebab-case identifier. Shared across every block this gate
+        /// covers.
+        slug: String,
+        /// One line stating the decision (not the context) — this is what
+        /// gets rendered next to the approve control.
+        what: String,
+        /// Digest of the exact payload reviewed. Binds the approval to what
+        /// was seen: if the payload changes, the approval is void and
+        /// re-queues.
+        digest: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
