@@ -1050,6 +1050,62 @@ mod tests {
     }
 
     #[test]
+    fn operator_edge_without_what_roundtrips() {
+        let json = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
+        let edge: BlockedBy = serde_json::from_str(json).unwrap();
+        let expected = BlockedBy::Operator {
+            slug: "session-mac-mini".to_string(),
+            exit: "planning/handoff.md".to_string(),
+            start: "/begin-session mac-mini".to_string(),
+            what: None,
+        };
+        assert_eq!(edge, expected);
+
+        let serialized = serde_json::to_string(&edge).unwrap();
+        assert!(serialized.contains("\"type\":\"operator\""));
+
+        let reparsed: BlockedBy = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(reparsed, edge);
+    }
+
+    #[test]
+    fn operator_edge_with_what_roundtrips() {
+        let json = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/handoff.md","start":"/begin-session mac-mini","what":"gates the Mini restart"}"#;
+        let edge: BlockedBy = serde_json::from_str(json).unwrap();
+        let expected = BlockedBy::Operator {
+            slug: "session-mac-mini".to_string(),
+            exit: "planning/handoff.md".to_string(),
+            start: "/begin-session mac-mini".to_string(),
+            what: Some("gates the Mini restart".to_string()),
+        };
+        assert_eq!(edge, expected);
+
+        let serialized = serde_json::to_string(&edge).unwrap();
+        assert!(serialized.contains("\"type\":\"operator\""));
+
+        let reparsed: BlockedBy = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(reparsed, edge);
+    }
+
+    #[test]
+    fn approval_edge_roundtrips() {
+        let json = r#"{"type":"approval","slug":"approve-devto-sweep","what":"publish the four Dev.to tag edits","digest":"sha256:abcd1234"}"#;
+        let edge: BlockedBy = serde_json::from_str(json).unwrap();
+        let expected = BlockedBy::Approval {
+            slug: "approve-devto-sweep".to_string(),
+            what: "publish the four Dev.to tag edits".to_string(),
+            digest: "sha256:abcd1234".to_string(),
+        };
+        assert_eq!(edge, expected);
+
+        let serialized = serde_json::to_string(&edge).unwrap();
+        assert!(serialized.contains("\"type\":\"approval\""));
+
+        let reparsed: BlockedBy = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(reparsed, edge);
+    }
+
+    #[test]
     fn block_id_alias_reads_v1_key() {
         let v1 = r#"{"block": "BA.1.A", "title": "legacy"}"#;
         let block: Block = serde_json::from_str(v1).unwrap();
