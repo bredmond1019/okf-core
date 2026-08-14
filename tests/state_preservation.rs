@@ -403,6 +403,61 @@ fn state_file_with_populated_reference_round_trips_byte_identically() {
     assert_eq!(original, round);
 }
 
+/// Before this ticket, `StateFile` had no typed `reference` field, so any
+/// `reference[]` authored into a `state.json` was silently absorbed by the
+/// `#[serde(flatten, default)] extra` capture map and round-tripped from
+/// there. This proves the transition is clean now that the typed field
+/// exists: the same fixture deserializes into `StateFile::reference`, NOT
+/// into `extra`, re-serializes identically, and the value appears in
+/// exactly one place — never duplicated across both, never silently
+/// dropped.
+#[test]
+fn reference_formerly_absorbed_by_extra_now_deserializes_into_typed_field() {
+    let raw = r#"{
+        "repo": "hq",
+        "kind": "brain",
+        "updated": "2026-08-03",
+        "note": null,
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [],
+        "reference": [
+            {
+                "slug": "hq:planning-symlink-is-a-vaulted-trap",
+                "scope": {"repo": null, "tier": null, "cross_repo": true},
+                "class": "trap",
+                "text": "planning/ is a symlink into the HQ-tracked vault.",
+                "created": "2026-08-01"
+            }
+        ]
+    }"#;
+
+    let file: StateFile = serde_json::from_str(raw).unwrap();
+
+    // Lands in the typed field, with the values as authored.
+    assert_eq!(file.reference.len(), 1);
+    assert_eq!(
+        file.reference[0].slug,
+        "hq:planning-symlink-is-a-vaulted-trap"
+    );
+
+    // Does NOT also land in `extra` — no duplication across both places.
+    assert!(
+        !file.extra.contains_key("reference"),
+        "reference must not also be captured in `extra` now that a typed field exists: {:?}",
+        file.extra
+    );
+
+    // Re-serializes identically — nothing dropped, nothing added.
+    let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    assert_eq!(original, round);
+}
+
 // ---------------------------------------------------------------------------
 // Task 4 — round-trip and serialization-shape tests for the carryover
 // triage fields (`priority`, `blocks`, `finding_id`) and typed `ClearsWhen`.

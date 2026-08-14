@@ -16,7 +16,7 @@
 //! task — those pin the OK.3.A and OK.3.B properties and must stay untouched so this
 //! change is provably non-weakening.
 
-use okf_core::{Backlog, Carryover, Epic, StateFile, Track, TrackBlock};
+use okf_core::{Backlog, Carryover, Epic, Reference, StateFile, Track, TrackBlock};
 
 // ---------------------------------------------------------------------------
 // Test 1 — literal construction naming only the caller-relevant fields.
@@ -246,6 +246,21 @@ fn carryover_default_omits_priority_blocks_finding_id() {
     assert!(
         !obj.contains_key("finding_id"),
         "a default Carryover must omit `finding_id` (do not copy `related`'s bare #[serde(default)]): {value}"
+    );
+}
+
+/// Mirrors `carryover_default_has_no_phantom_keys` for the new `Reference`
+/// struct (`OK.ticket.reference-container-fields`, task 3). `Reference`
+/// carries no `clears_when`, `priority`, or `blocks` by design — it never
+/// had them to omit, unlike `Carryover`'s explicit-omission guard above.
+#[test]
+fn reference_default_has_no_phantom_keys() {
+    let value = serde_json::to_value(Reference::default()).unwrap();
+    assert_no_phantom_extra_keys(
+        &value,
+        &[
+            "slug", "scope", "class", "text", "created", "related", "reviewed",
+        ],
     );
 }
 
