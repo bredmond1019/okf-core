@@ -24,7 +24,7 @@ owns four brain contracts as a single source of truth, consumed by sibling crate
 | `parse` | `src/parse.rs` | `Frontmatter`, `ParseResult`, `extract_frontmatter`, `parse_frontmatter` — the flat frontmatter read path |
 | `graph` | `src/graph.rs` | `Edge`, `EdgeKind`, `Graph`, `Node`, `GraphArtifact`, `resolve_edge` — the brain structural graph model |
 | `graph_emit` | `src/graph_emit.rs` | `ExportedEdge`, `GraphExport`, `build_graph_export` — graph export for `mev emit-graph` |
-| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `load_state`, `build_state_graph` — the `planning/state.json` schema and its derived graph |
+| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `CarryoverKind` (+ `KnownCarryoverKind`), `Reference`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `load_state`, `build_state_graph` — the `planning/state.json` schema and its derived graph |
 | `doc` | `src/doc/*.rs` | The typed **brain-document** layer — see below |
 
 All public items are re-exported flat from `src/lib.rs`; consumers import everything as
@@ -115,6 +115,9 @@ business opportunity captured from a `RESEARCH_AGENT` run, before promotion to a
   - `kind`/`stage` are deliberately `Option<String>`, not typed enums — `okf-core` is the
     lenient data model in the stack; enforcing the allowed value sets (`kind: company |
     prospecting-sweep | job-posting`, `stage: identified | … | closed-lost`) is mev's job.
+    Note that leniency is about **validation**, not about staying untyped: see
+    "[Typed-with-fallback](#typed-with-fallback--how-to-type-a-vocabulary-without-a-parse-cliff)"
+    below, which is how `Carryover.kind` gained a type without okf-core taking on validation.
   - `research_brief: JsonValue` is embedded verbatim as the first fenced `json` block under a
     `## Research Brief` heading; `Value::Null` (default) omits that section entirely.
 - `Contact { name, role, emails, whatsapp, phones, links, note }` — an enriched contact channel;
@@ -385,6 +388,49 @@ authored structs via `..Default::default()`, asserts the flattened `extra` map d
 and asserts each default value round-trips through serialize→deserialize. Removing a `#[derive(Default)]`
 from any of the six will fail that file at compile time rather than silently reopening the defect
 class described above.
+
+## Typed-with-fallback — how to type a vocabulary without a parse cliff
+
+Several `state.json` fields hold a small controlled vocabulary. The obvious move is a plain enum,
+and it is usually wrong here. **An unknown enum variant aborts deserialization of the entire file**,
+not just the offending entry — mev pins this in a test (`core/mev/src/brain/state.rs:3411`,
+"unknown blocked_by type in full file should produce `StateLoadError::Parse`"). Since
+`mev emit-state` regenerates derived surfaces from these files, one stray value written by any
+session blacks out every other check on that file.
+
+The opposite failure is just as bad and quieter: `blocks[].model` accepts four values and silently
+normalizes anything else to `"sonnet"` (`core/mev/src/brain/state.rs:821`). That coerces data
+without telling anyone.
+
+The shape that avoids both is an `#[serde(untagged)]` wrapper over a known enum plus a `String`
+fallback:
+
+```rust
+#[serde(untagged)]
+pub enum CarryoverKind {
+    Known(KnownCarryoverKind),   // defect | deferred | drift | env
+    Unknown(String),             // anything else, preserved verbatim
+}
+```
+
+**Declaration order is load-bearing.** Untagged variants are tried in order, so `Known` must come
+first; reversed, every known value falls into `Unknown(String)` — and every round-trip test still
+passes, because the string survives either way. That is the failure this note exists to prevent.
+
+What it buys: known values match exhaustively at compile time, an unknown value degrades to a
+validation error on *that entry* instead of a parse failure on the whole file, and the original
+string round-trips byte-identically rather than being coerced or dropped. okf-core still validates
+nothing — the known-vocabulary check stays in mev — so the leniency principle above holds.
+
+`ClearsWhen` uses the same pattern. `Carryover.kind` adopted it in
+`OK.ticket.carryover-kind-typed-enum`, which is also why the legacy `constraint` / `known_issue`
+values — still on ~131 live entries pending migration — keep loading: they land in `Unknown`.
+Verified against the real corpus at the time, not only fixtures: all **51** `state.json` files in
+the fleet load with zero failures.
+
+`BlockedBy`, by contrast, *is* a bare enum, and that is a deliberate trade — a dangling dependency
+edge should be loud. The cost is on record: adding two variants to it broke every exhaustive match
+downstream.
 
 ## The optional `typeshare` feature — generating `BlockedBy`'s payload types
 
