@@ -39,64 +39,90 @@ pub enum StateLoadError {
 // BlockedBy — internally tagged enum on `type`
 // ---------------------------------------------------------------------------
 
+/// Payload for [`BlockedBy::Block`] — a dependency on another block (may be
+/// cross-repo).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct BlockDep {
+    /// Slug of the owning repo.
+    pub repo: String,
+    /// Canonical block ID (e.g. `BA.11.C`).
+    pub id: String,
+    /// Optional gloss explaining the dependency.
+    #[serde(default)]
+    pub what: Option<String>,
+}
+
+/// Payload for [`BlockedBy::External`] — an environmental / external
+/// dependency (not a tracked block).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct ExternalDep {
+    /// Human description of the external dependency.
+    pub what: String,
+}
+
+/// Payload for [`BlockedBy::Operator`] — an operator working session that
+/// gates this block.
+///
+/// Targetless — no node, skipped by dangling/cycle/topo logic — but
+/// identified: a `slug` can be shared across several blocks so tooling can
+/// find and clear the gate they are all waiting on. Named `operator` rather
+/// than `session` to avoid colliding with `bastion sessions` (the tmux CLI);
+/// this is a `depends_on` edge discriminant only.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct OperatorDep {
+    /// Kebab-case identifier. Shared across every block this gate
+    /// covers, giving otherwise-unrelated blocks a join key.
+    pub slug: String,
+    /// The artifact whose existence ends the session — the thing you
+    /// can point at afterwards, not a description of the work.
+    pub exit: String,
+    /// The command that starts the session, paste-ready.
+    pub start: String,
+    /// Optional gloss: why this particular block is gated on it.
+    #[serde(default)]
+    pub what: Option<String>,
+}
+
+/// Payload for [`BlockedBy::Approval`] — a gated action awaiting a single
+/// operator decision.
+///
+/// Targetless like `Operator` — no node, skipped by dangling/cycle/topo
+/// logic — but identified via `slug` so tooling can find and clear it.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct ApprovalDep {
+    /// Kebab-case identifier. Shared across every block this gate
+    /// covers.
+    pub slug: String,
+    /// One line stating the decision (not the context) — this is what
+    /// gets rendered next to the approve control.
+    pub what: String,
+    /// Digest of the exact payload reviewed. Binds the approval to what
+    /// was seen: if the payload changes, the approval is void and
+    /// re-queues.
+    pub digest: String,
+}
+
 /// A single entry in a `blocked_by[]` / `depends_on[]` / `related[]` array.
 ///
 /// Tagged by the `"type"` field. Unknown `type` values are rejected by serde
 /// (no `#[serde(other)]`), surfaced as `StateLoadError::Parse`.
+///
+/// Each variant is a newtype over a named payload struct rather than an
+/// inline body. serde serializes a newtype-of-struct variant flat under
+/// internal tagging, so the wire shape is unchanged; the payload structs
+/// carry the typeshare annotation instead of the enum, because typeshare
+/// rejects internally-tagged algebraic enums outright.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BlockedBy {
     /// A dependency on another block (may be cross-repo).
-    Block {
-        /// Slug of the owning repo.
-        repo: String,
-        /// Canonical block ID (e.g. `BA.11.C`).
-        id: String,
-        /// Optional gloss explaining the dependency.
-        #[serde(default)]
-        what: Option<String>,
-    },
+    Block(BlockDep),
     /// An environmental / external dependency (not a tracked block).
-    External {
-        /// Human description of the external dependency.
-        what: String,
-    },
+    External(ExternalDep),
     /// An operator working session that gates this block.
-    ///
-    /// Targetless — no node, skipped by dangling/cycle/topo logic — but
-    /// identified: a `slug` can be shared across several blocks so tooling
-    /// can find and clear the gate they are all waiting on. Named `operator`
-    /// rather than `session` to avoid colliding with `bastion sessions`
-    /// (the tmux CLI); this is a `depends_on` edge discriminant only.
-    Operator {
-        /// Kebab-case identifier. Shared across every block this gate
-        /// covers, giving otherwise-unrelated blocks a join key.
-        slug: String,
-        /// The artifact whose existence ends the session — the thing you
-        /// can point at afterwards, not a description of the work.
-        exit: String,
-        /// The command that starts the session, paste-ready.
-        start: String,
-        /// Optional gloss: why this particular block is gated on it.
-        #[serde(default)]
-        what: Option<String>,
-    },
+    Operator(OperatorDep),
     /// A gated action awaiting a single operator decision.
-    ///
-    /// Targetless like `Operator` — no node, skipped by dangling/cycle/topo
-    /// logic — but identified via `slug` so tooling can find and clear it.
-    Approval {
-        /// Kebab-case identifier. Shared across every block this gate
-        /// covers.
-        slug: String,
-        /// One line stating the decision (not the context) — this is what
-        /// gets rendered next to the approve control.
-        what: String,
-        /// Digest of the exact payload reviewed. Binds the approval to what
-        /// was seen: if the payload changes, the approval is void and
-        /// re-queues.
-        digest: String,
-    },
+    Approval(ApprovalDep),
 }
 
 // ---------------------------------------------------------------------------
@@ -841,7 +867,7 @@ pub fn build_state_graph(files: &[(StateSource, StateFile)]) -> StateGraph {
                 // BlockedBy edges: one per {type:block} depends_on entry.
                 // External entries are leaf constraints, not graph edges — skip.
                 for dep in &block.depends_on {
-                    if let BlockedBy::Block { repo, id, .. } = dep {
+                    if let BlockedBy::Block(BlockDep { repo, id, .. }) = dep {
                         edges.push(StateEdge {
                             from: from_key.clone(),
                             to_ref: format!("{repo}:{id}"),
@@ -1120,12 +1146,12 @@ mod tests {
     fn operator_edge_without_what_roundtrips() {
         let json = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/handoff.md","start":"/begin-session mac-mini"}"#;
         let edge: BlockedBy = serde_json::from_str(json).unwrap();
-        let expected = BlockedBy::Operator {
+        let expected = BlockedBy::Operator(OperatorDep {
             slug: "session-mac-mini".to_string(),
             exit: "planning/handoff.md".to_string(),
             start: "/begin-session mac-mini".to_string(),
             what: None,
-        };
+        });
         assert_eq!(edge, expected);
 
         let serialized = serde_json::to_string(&edge).unwrap();
@@ -1139,12 +1165,12 @@ mod tests {
     fn operator_edge_with_what_roundtrips() {
         let json = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/handoff.md","start":"/begin-session mac-mini","what":"gates the Mini restart"}"#;
         let edge: BlockedBy = serde_json::from_str(json).unwrap();
-        let expected = BlockedBy::Operator {
+        let expected = BlockedBy::Operator(OperatorDep {
             slug: "session-mac-mini".to_string(),
             exit: "planning/handoff.md".to_string(),
             start: "/begin-session mac-mini".to_string(),
             what: Some("gates the Mini restart".to_string()),
-        };
+        });
         assert_eq!(edge, expected);
 
         let serialized = serde_json::to_string(&edge).unwrap();
@@ -1158,11 +1184,11 @@ mod tests {
     fn approval_edge_roundtrips() {
         let json = r#"{"type":"approval","slug":"approve-devto-sweep","what":"publish the four Dev.to tag edits","digest":"sha256:abcd1234"}"#;
         let edge: BlockedBy = serde_json::from_str(json).unwrap();
-        let expected = BlockedBy::Approval {
+        let expected = BlockedBy::Approval(ApprovalDep {
             slug: "approve-devto-sweep".to_string(),
             what: "publish the four Dev.to tag edits".to_string(),
             digest: "sha256:abcd1234".to_string(),
-        };
+        });
         assert_eq!(edge, expected);
 
         let serialized = serde_json::to_string(&edge).unwrap();

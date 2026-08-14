@@ -16,7 +16,10 @@
 // module) because `src/state.rs` is already large and these tests exercise the crate's public
 // surface only (`okf_core::StateFile` etc.), same posture as `tests/schema_conformance.rs`.
 
-use okf_core::{BlockedBy, Carryover, ClearsWhen, ClearsWhenPredicate, StateFile, TrackBlock};
+use okf_core::{
+    BlockDep, BlockedBy, Carryover, ClearsWhen, ClearsWhenPredicate, ExternalDep, OperatorDep,
+    StateFile, TrackBlock,
+};
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
 /// authored level: top level, a `tracks[]` entry, a `tracks[].blocks[]` entry, a `backlog[]`
@@ -512,7 +515,7 @@ fn carryover_triage_fields_round_trip() {
     assert_eq!(carryover.priority, Some(1));
     assert_eq!(carryover.blocks.len(), 2);
     match &carryover.blocks[0] {
-        BlockedBy::Block { repo, id, what } => {
+        BlockedBy::Block(BlockDep { repo, id, what }) => {
             assert_eq!(repo, "mev");
             assert_eq!(id, "MV.2.A");
             assert_eq!(*what, None);
@@ -520,7 +523,7 @@ fn carryover_triage_fields_round_trip() {
         other => panic!("expected Block, got {other:?}"),
     }
     match &carryover.blocks[1] {
-        BlockedBy::External { what } => {
+        BlockedBy::External(ExternalDep { what }) => {
             assert_eq!(what, "blocks every ticket run fleet-wide");
         }
         other => panic!("expected External, got {other:?}"),
@@ -593,9 +596,9 @@ fn operator_edges_share_identity_across_two_blocks() {
     let slug_of = |block: &TrackBlock| -> String {
         assert_eq!(block.depends_on.len(), 1);
         match &block.depends_on[0] {
-            BlockedBy::Operator {
+            BlockedBy::Operator(OperatorDep {
                 slug, exit, start, ..
-            } => {
+            }) => {
                 assert_eq!(exit, "planning/mac-mini-session-notes.md exists");
                 assert_eq!(start, "bastion sessions new mac-mini");
                 slug.clone()
