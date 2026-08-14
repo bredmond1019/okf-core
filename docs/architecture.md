@@ -24,7 +24,7 @@ owns four brain contracts as a single source of truth, consumed by sibling crate
 | `parse` | `src/parse.rs` | `Frontmatter`, `ParseResult`, `extract_frontmatter`, `parse_frontmatter` — the flat frontmatter read path |
 | `graph` | `src/graph.rs` | `Edge`, `EdgeKind`, `Graph`, `Node`, `GraphArtifact`, `resolve_edge` — the brain structural graph model |
 | `graph_emit` | `src/graph_emit.rs` | `ExportedEdge`, `GraphExport`, `build_graph_export` — graph export for `mev emit-graph` |
-| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy`, `load_state`, `build_state_graph` — the `planning/state.json` schema and its derived graph |
+| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `load_state`, `build_state_graph` — the `planning/state.json` schema and its derived graph |
 | `doc` | `src/doc/*.rs` | The typed **brain-document** layer — see below |
 
 All public items are re-exported flat from `src/lib.rs`; consumers import everything as
@@ -385,6 +385,55 @@ authored structs via `..Default::default()`, asserts the flattened `extra` map d
 and asserts each default value round-trips through serialize→deserialize. Removing a `#[derive(Default)]`
 from any of the six will fail that file at compile time rather than silently reopening the defect
 class described above.
+
+## The optional `typeshare` feature — generating `BlockedBy`'s payload types
+
+`BlockedBy` describes why a block cannot start, and its four reasons (`block`, `external`,
+`operator`, `approval`) have to reach the cockpit's TypeScript. **typeshare cannot generate the
+enum itself.** It rejects internally-tagged data-carrying enums outright — against typeshare-cli
+1.13.4, annotating `BlockedBy` fails with `Serde content attribute needs to be specified for
+algebraic enum BlockedBy`. Satisfying it would mean adding `content = "content"`, which rewrites
+every dependency entry in every `state.json` in the fleet. That trade was considered and rejected.
+
+So each variant's body is a **named payload struct** the variant wraps as a newtype:
+
+```rust
+pub enum BlockedBy {
+    Block(BlockDep),
+    External(ExternalDep),
+    Operator(OperatorDep),
+    Approval(ApprovalDep),
+}
+```
+
+The four structs carry the annotation; the enum stays bare. serde writes a newtype-of-struct
+variant **flat** under internal tagging, so **the on-disk and on-the-wire JSON is unchanged** —
+pinned by one byte-identity test per variant in `tests/state_preservation.rs`, plus
+`clean_file_is_byte_identical`, which must keep passing untouched.
+
+**What downstream gets is four interfaces, not a union.** typeshare emits `BlockDep`,
+`ExternalDep`, `OperatorDep`, and `ApprovalDep` — never a type named `BlockedBy`. Consumers still
+hand-write the discriminated union, but as a short union over generated interfaces rather than a
+full transcription of every field. Anything expecting to export the name `BlockedBy` will find
+nothing.
+
+**The dependency is optional and never linked by default.** `Cargo.toml` declares
+`typeshare = { version = "1", optional = true }` behind a `typeshare = ["dep:typeshare"]` feature,
+applied as `#[cfg_attr(feature = "typeshare", typeshare::typeshare)]`. typeshare-cli parses source
+syntactically and never links the crate, so generation works without the feature ever being
+enabled: `cargo tree` on a default build shows no `typeshare`. That is why AGENT.md standing rule 3
+("no I/O dependencies") holds unchanged.
+
+Regenerate and check with:
+
+```bash
+scripts/check-typeshare.sh
+```
+
+It regenerates the TypeScript and asserts all four interfaces are present. It is a **developer
+convenience, not a gate** — with the CLI absent it prints an install hint and exits 0, so it can
+never hard-block a machine that lacks it. It also probes `~/.cargo/bin` before concluding the CLI
+is missing, since `cargo install` puts it there and that directory is not on every machine's PATH.
 
 ## See also
 

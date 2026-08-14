@@ -14,4 +14,4 @@ related: [okf-core, okf-core-architecture]
 
 | Doc | Contents |
 |---|---|
-| [`architecture.md`](architecture.md) | Module map, key types (`BrainDocModel`, `FrontmatterValue`, `Opportunity`, `LearningArtifact`, `Proposal`, …), and data flow |
+| [`architecture.md`](architecture.md) | Module map, key types (`BrainDocModel`, `FrontmatterValue`, `Opportunity`, `LearningArtifact`, `Proposal`, …), data flow, and the optional `typeshare` feature that generates `BlockedBy`'s payload types |
