@@ -7,12 +7,29 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-14T13:19:52-03:00"
+timestamp: "2026-08-14T15:10:00-03:00"
 ---
 
 # Log
 
 ## [2026-08-14]
+
+### Blocks B and C of the carryover lifecycle — a container and a typed vocabulary
+- **What:** Closed `OK.ticket.reference-container-fields` (4/4) and `OK.ticket.carryover-kind-typed-enum`
+  (4/4). `StateFile` gained `reference: Vec<Reference>`; `Carryover.kind` became `CarryoverKind`, an
+  untagged `Known(KnownCarryoverKind)` / `Unknown(String)` pair. Documented the typed-with-fallback
+  pattern in `docs/architecture.md`. okf-core now has 14 of 15 blocks closed.
+- **Why:** Two different failures of an untyped/over-typed vocabulary. 77 of 192 `carryover[]` entries
+  (40%) are permanently-true material that can never be resolved, so every triage surface was asking a
+  human to finish something unfinishable — `Reference` omits `clears_when`/`priority`/`blocks[]` so a
+  board *cannot* sort it. Separately, `kind` as a bare `String` accepts anything, but a bare enum is
+  worse: an unknown variant aborts deserialization of the whole file, blacking out every other check on
+  it. The untagged fallback types the known values while letting an unknown one degrade to a per-entry
+  validation error.
+- **Refs:** `planning/ticket-reference-container-fields/tasks.md`,
+  `planning/ticket-carryover-kind-typed-enum/tasks.md`; Blocks B and C of `brain:carryover-lifecycle-plan`.
+  Verified against the real corpus: all 51 fleet `state.json` files load, including ~131 entries on the
+  legacy `constraint`/`known_issue` kinds. Breaks mev until Block E adapts, by design.
 
 ### Lane B of `lane-aware-briefing` — `BlockedBy` payload structs reach typeshare
 - **What:** Closed `OK.ticket.blockedby-typeshare-export` via `/sdlc-task`, 5/5 tasks, in place on
