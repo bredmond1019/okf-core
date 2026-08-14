@@ -7,10 +7,33 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-11T23:27:09-03:00"
+timestamp: "2026-08-14T13:19:52-03:00"
 ---
 
 # Log
+
+## [2026-08-14]
+
+### Lane B of `lane-aware-briefing` — `BlockedBy` payload structs reach typeshare
+- **What:** Closed `OK.ticket.blockedby-typeshare-export` via `/sdlc-task`, 5/5 tasks, in place on
+  `main`. `BlockedBy`'s four variants now wrap named payload structs (`BlockDep`, `ExternalDep`,
+  `OperatorDep`, `ApprovalDep`), re-exported from `src/lib.rs`, each annotated
+  `#[cfg_attr(feature = "typeshare", typeshare::typeshare)]` behind an optional, feature-gated
+  dependency. Added `scripts/check-typeshare.sh`; documented the feature in `docs/architecture.md`
+  and AGENT.md rule 3. The wire format is byte-identical — five per-variant round-trip tests plus an
+  untouched `clean_file_is_byte_identical`.
+- **Why:** Every `operator` gate in the fleet was unrepresentable in the cockpit's type system.
+  `BlockedBy` never reached generated TypeScript at all, so `bastion-web` carried a hand-typed
+  two-variant copy that had silently fallen behind the enum's four. The obvious fix — annotate the
+  enum — is impossible: typeshare rejects internally-tagged data enums, and satisfying it with
+  `content = "content"` would rewrite every `state.json` in the fleet. Wrapping each variant in a
+  named struct is what makes the four shapes generable without touching the wire format.
+- **Refs:** `planning/ticket-blockedby-typeshare-export/tasks.md`;
+  `planning/orchestration-run/lane-aware-briefing/{notes,review}.md`;
+  `<BRAIN_ROOT>/planning/roadmaps/lane-aware-briefing/roadmap.md`. Unblocks `BA.19.A`.
+  Downstream `mev`/`bastion`/`engine-rs` no longer compile — by design, rooted in `mev`; see
+  carryover `blockedby-newtype-break-is-rooted-in-mev-not-per-consumer`.
+
 
 ## [2026-08-11]
 
