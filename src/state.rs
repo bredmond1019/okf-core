@@ -42,6 +42,7 @@ pub enum StateLoadError {
 /// Payload for [`BlockedBy::Block`] — a dependency on another block (may be
 /// cross-repo).
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
 pub struct BlockDep {
     /// Slug of the owning repo.
     pub repo: String,
@@ -55,6 +56,7 @@ pub struct BlockDep {
 /// Payload for [`BlockedBy::External`] — an environmental / external
 /// dependency (not a tracked block).
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
 pub struct ExternalDep {
     /// Human description of the external dependency.
     pub what: String,
@@ -69,6 +71,7 @@ pub struct ExternalDep {
 /// than `session` to avoid colliding with `bastion sessions` (the tmux CLI);
 /// this is a `depends_on` edge discriminant only.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
 pub struct OperatorDep {
     /// Kebab-case identifier. Shared across every block this gate
     /// covers, giving otherwise-unrelated blocks a join key.
@@ -89,6 +92,7 @@ pub struct OperatorDep {
 /// Targetless like `Operator` — no node, skipped by dangling/cycle/topo
 /// logic — but identified via `slug` so tooling can find and clear it.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
 pub struct ApprovalDep {
     /// Kebab-case identifier. Shared across every block this gate
     /// covers.
