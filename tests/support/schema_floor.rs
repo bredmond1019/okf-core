@@ -161,13 +161,7 @@ pub fn expected_field_names(section: &str) -> &'static [&'static str] {
             "snoozed_until",
         ],
         "reference[]" => &[
-            "slug",
-            "scope",
-            "class",
-            "text",
-            "created",
-            "related",
-            "reviewed",
+            "slug", "scope", "class", "text", "created", "related", "reviewed",
         ],
         other => panic!(
             "expected_field_names: unmapped section `{other}` — the name \
@@ -253,13 +247,7 @@ mod tests {
         assert_eq!(
             expected_field_names("reference[]"),
             &[
-                "slug",
-                "scope",
-                "class",
-                "text",
-                "created",
-                "related",
-                "reviewed",
+                "slug", "scope", "class", "text", "created", "related", "reviewed",
             ]
         );
     }
