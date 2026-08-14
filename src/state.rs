@@ -617,6 +617,55 @@ pub struct CarryoverScope {
     pub cross_repo: Option<bool>,
 }
 
+/// The fixed, known `Carryover.kind` vocabulary (HQ D72).
+///
+/// `constraint` and `known_issue` are deliberately absent: they are leaving
+/// the vocabulary and are handled by the `Unknown(String)` fallback on
+/// [`CarryoverKind`] until Block G migrates the ~131 live entries still
+/// using them.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum KnownCarryoverKind {
+    Defect,
+    Deferred,
+    Drift,
+    Env,
+}
+
+/// `Carryover.kind`, typed with an `Unknown(String)` fallback.
+///
+/// Untagged: `Known` MUST stay the first variant. `#[serde(untagged)]` tries
+/// variants in declaration order, and the reverse would swallow every known
+/// value into `Unknown(String)`, silently defeating the whole point of the
+/// enum while every round-trip test still passes.
+///
+/// Modelled on [`ClearsWhen`]'s untagged pattern: an unknown value degrades
+/// to `Unknown(String)` rather than aborting deserialization of the entire
+/// `state.json` file the way a bare (non-untagged) enum would — see
+/// `core/mev/src/brain/state.rs:3411`, which pins that consequence for
+/// `BlockedBy`. The original string is preserved rather than dropped, so a
+/// round-trip is byte-identical even for values outside the known
+/// vocabulary (e.g. the legacy `constraint` / `known_issue` values still on
+/// live entries).
+///
+/// okf-core defines the SHAPE only and never validates or evaluates it
+/// (AGENT.md rule 3); the known-vocabulary check lives in mev.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum CarryoverKind {
+    /// One of the fixed, known kind values.
+    Known(KnownCarryoverKind),
+    /// Anything else — preserved verbatim rather than rejected or coerced.
+    Unknown(String),
+}
+
+impl Default for CarryoverKind {
+    /// Preserves today's default of an empty string.
+    fn default() -> Self {
+        CarryoverKind::Unknown(String::new())
+    }
+}
+
 /// A durable caveat, known issue, environmental note, or deferred follow-on.
 ///
 /// Derives `Default` so downstream consumers construct this with
@@ -629,7 +678,7 @@ pub struct Carryover {
     /// Where it applies.
     pub scope: CarryoverScope,
     /// Item kind (`constraint`, `known_issue`, `env`, `deferred`).
-    pub kind: String,
+    pub kind: CarryoverKind,
     /// The caveat / follow-on text.
     pub text: String,
     /// Optional related edges (same forms as blocked_by).

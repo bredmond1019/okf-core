@@ -24,9 +24,9 @@ pub use graph::{Edge, EdgeKind, EdgeResolution, Graph, GraphArtifact, Node, reso
 pub use graph_emit::{ExportedEdge, GraphExport, build_graph_export};
 pub use parse::{Frontmatter, ParseResult, extract_frontmatter, parse_frontmatter};
 pub use state::{
-    ApprovalDep, Backlog, BacklogOrigin, Block, BlockDep, BlockedBy, Carryover, CarryoverScope,
-    ClearsWhen, ClearsWhenPredicate, CrossRepoEdge, Endpoint, Epic, ExternalDep, Focus,
-    OperatorDep, Origin, Reference, RepoRollup, StateEdge, StateEdgeKind, StateFile, StateGraph,
-    StateLoadError, StateNode, StateSource, TierEntry, Track, TrackBlock, build_state_graph,
-    load_state,
+    ApprovalDep, Backlog, BacklogOrigin, Block, BlockDep, BlockedBy, Carryover, CarryoverKind,
+    CarryoverScope, ClearsWhen, ClearsWhenPredicate, CrossRepoEdge, Endpoint, Epic, ExternalDep,
+    Focus, KnownCarryoverKind, OperatorDep, Origin, Reference, RepoRollup, StateEdge,
+    StateEdgeKind, StateFile, StateGraph, StateLoadError, StateNode, StateSource, TierEntry, Track,
+    TrackBlock, build_state_graph, load_state,
 };

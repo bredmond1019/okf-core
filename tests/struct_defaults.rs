@@ -16,7 +16,7 @@
 //! task — those pin the OK.3.A and OK.3.B properties and must stay untouched so this
 //! change is provably non-weakening.
 
-use okf_core::{Backlog, Carryover, Epic, Reference, StateFile, Track, TrackBlock};
+use okf_core::{Backlog, Carryover, CarryoverKind, Epic, Reference, StateFile, Track, TrackBlock};
 
 // ---------------------------------------------------------------------------
 // Test 1 — literal construction naming only the caller-relevant fields.
@@ -81,7 +81,7 @@ fn epic_constructs_with_partial_literal() {
 fn carryover_constructs_with_partial_literal() {
     let carryover = Carryover {
         slug: "seed-carryover".to_string(),
-        kind: "known_issue".to_string(),
+        kind: CarryoverKind::Unknown("known_issue".to_string()),
         text: "some caveat".to_string(),
         created: "2026-08-04".to_string(),
         ..Default::default()
