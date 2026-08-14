@@ -313,6 +313,97 @@ fn note_survives_without_a_struct_field() {
 }
 
 // ---------------------------------------------------------------------------
+// `reference[]` — the permanently-true container added alongside `carryover[]`
+// (see `planning/ticket-reference-container-fields`). These are separate from
+// `clean_file_is_byte_identical` (:214) on purpose: that test must keep
+// passing with zero edits, as the direct proof that a state.json predating
+// `reference[]` never grows a stray `"reference": []` key.
+// ---------------------------------------------------------------------------
+
+/// A `state.json` with no `reference` key at all must round-trip
+/// byte-identically and must NOT gain a `"reference": []` on write — this is
+/// the assertion that protects every fleet state.json that predates this
+/// field. Deliberately a fresh fixture (not a reuse of
+/// `clean_file_is_byte_identical`'s raw string) so that test can keep
+/// asserting its own byte-identity claim untouched while this one carries the
+/// `reference`-specific proof.
+#[test]
+fn state_file_without_reference_key_round_trips_and_gains_no_empty_array() {
+    let raw = r#"{
+        "repo": "bastion",
+        "kind": "project",
+        "updated": "2026-08-03",
+        "note": null,
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": []
+    }"#;
+
+    let file: StateFile = serde_json::from_str(raw).unwrap();
+    assert!(file.reference.is_empty());
+
+    let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    assert_eq!(original, round);
+
+    assert!(
+        !round.as_object().unwrap().contains_key("reference"),
+        "reference must stay omitted from the output when empty, got: {round:?}"
+    );
+}
+
+/// A `state.json` carrying a populated `reference[]` round-trips
+/// byte-identically, and the typed field deserializes with exactly the
+/// values authored — no `clears_when`, `priority`, or `blocks` to check
+/// because `Reference` carries none of those fields by design.
+#[test]
+fn state_file_with_populated_reference_round_trips_byte_identically() {
+    let raw = r#"{
+        "repo": "hq",
+        "kind": "brain",
+        "updated": "2026-08-03",
+        "note": null,
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [],
+        "reference": [
+            {
+                "slug": "mev:nextest-rule-is-mev-scoped-not-fleet-wide",
+                "scope": {"repo": "mev", "tier": null, "cross_repo": null},
+                "class": "lesson",
+                "text": "The nextest rule is mev-scoped, not fleet-wide.",
+                "created": "2026-08-10"
+            }
+        ]
+    }"#;
+
+    let file: StateFile = serde_json::from_str(raw).unwrap();
+    assert_eq!(file.reference.len(), 1);
+    let entry = &file.reference[0];
+    assert_eq!(entry.slug, "mev:nextest-rule-is-mev-scoped-not-fleet-wide");
+    assert_eq!(entry.class, "lesson");
+    assert_eq!(
+        entry.text,
+        "The nextest rule is mev-scoped, not fleet-wide."
+    );
+    assert_eq!(entry.created, "2026-08-10");
+    assert!(entry.related.is_empty());
+    assert_eq!(entry.reviewed, None);
+
+    let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    assert_eq!(original, round);
+}
+
+// ---------------------------------------------------------------------------
 // Task 4 — round-trip and serialization-shape tests for the carryover
 // triage fields (`priority`, `blocks`, `finding_id`) and typed `ClearsWhen`.
 // ---------------------------------------------------------------------------
