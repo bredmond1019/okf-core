@@ -26,7 +26,7 @@ pub use parse::{Frontmatter, ParseResult, extract_frontmatter, parse_frontmatter
 pub use state::{
     ApprovalDep, Backlog, BacklogOrigin, Block, BlockDep, BlockedBy, Carryover, CarryoverScope,
     ClearsWhen, ClearsWhenPredicate, CrossRepoEdge, Endpoint, Epic, ExternalDep, Focus,
-    OperatorDep, Origin, RepoRollup, StateEdge, StateEdgeKind, StateFile, StateGraph,
+    OperatorDep, Origin, Reference, RepoRollup, StateEdge, StateEdgeKind, StateFile, StateGraph,
     StateLoadError, StateNode, StateSource, TierEntry, Track, TrackBlock, build_state_graph,
     load_state,
 };

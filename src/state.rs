@@ -670,6 +670,34 @@ pub struct Carryover {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+/// A permanently-true reference entry: a trap, measured design invariant,
+/// distilled lesson, or deliberate-choice marker that can never be "done".
+///
+/// Deliberately carries no `clears_when`, no `priority`, and no `blocks[]` —
+/// those are precisely the fields a triage surface sorts and ranks on, so
+/// omitting them makes "this is not work" structurally true rather than a
+/// convention someone has to remember. See
+/// `planning/ticket-reference-container-fields/tasks.md`.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct Reference {
+    /// Stable node key.
+    pub slug: String,
+    /// Where it applies.
+    pub scope: CarryoverScope,
+    /// Reference kind (`trap`, `invariant`, `lesson`, `deliberate`).
+    pub class: String,
+    /// The reference text.
+    pub text: String,
+    /// Date recorded (`YYYY-MM-DD` or full RFC3339).
+    pub created: String,
+    /// Optional related edges (same forms as blocked_by).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related: Vec<BlockedBy>,
+    /// Last "keep / re-affirm" disposition date — a full freshness-clock reset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // StateFile — top-level structure
 // ---------------------------------------------------------------------------
@@ -724,6 +752,13 @@ pub struct StateFile {
     /// Durable caveats and follow-ons.
     #[serde(default)]
     pub carryover: Vec<Carryover>,
+    /// Permanently-true reference material (traps, invariants, lessons,
+    /// deliberate-choice markers) — structurally un-triageable by design. A
+    /// `state.json` predating this field must not gain a stray `"reference": []`
+    /// on write, hence `skip_serializing_if` here (unlike the legacy `carryover`
+    /// field above, which this ticket does not touch).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference: Vec<Reference>,
     /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
     #[serde(flatten, default)]
     pub extra: serde_json::Map<String, serde_json::Value>,
