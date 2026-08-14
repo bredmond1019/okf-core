@@ -851,6 +851,30 @@ fn carryover_kind_unknown_value_does_not_abort_file_load() {
     );
 }
 
+/// `constraint` and `known_issue` are leaving the `kind` vocabulary but remain
+/// on roughly 131 live entries in the corpus until Block G migrates them.
+/// This ticket must not make that corpus unloadable: both legacy values must
+/// deserialize as `CarryoverKind::Unknown` and round-trip byte-identically,
+/// exactly like the `gotcha`/`decision` cases above.
+#[test]
+fn carryover_kind_legacy_values_round_trip() {
+    for raw_value in ["constraint", "known_issue"] {
+        let raw = format!("\"{raw_value}\"");
+        let kind: CarryoverKind = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            kind,
+            CarryoverKind::Unknown(raw_value.to_string()),
+            "{raw_value} must deserialize to Unknown(..) unchanged"
+        );
+
+        let round = serde_json::to_string(&kind).unwrap();
+        assert_eq!(
+            round, raw,
+            "{raw_value} must re-serialize byte-identically, not normalized"
+        );
+    }
+}
+
 /// Shared operator identity across two unrelated blocks.
 ///
 /// `tests/fixtures/operator-shared-slug.json` carries two blocks in the same
