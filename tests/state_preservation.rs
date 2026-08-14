@@ -17,8 +17,9 @@
 // surface only (`okf_core::StateFile` etc.), same posture as `tests/schema_conformance.rs`.
 
 use okf_core::{
-    ApprovalDep, BlockDep, BlockedBy, Carryover, ClearsWhen, ClearsWhenPredicate, ExternalDep,
-    OperatorDep, StateFile, TrackBlock,
+    ApprovalDep, BlockDep, BlockedBy, Carryover, CarryoverKind, ClearsWhen, ClearsWhenPredicate,
+    ExternalDep, KnownCarryoverKind, OperatorDep, StateFile, StateLoadError, TrackBlock,
+    load_state,
 };
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
@@ -717,6 +718,136 @@ fn carryover_without_new_keys_round_trips_byte_identically() {
     assert!(
         !round_obj.contains_key("finding_id"),
         "finding_id must stay omitted when absent from the input"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `Carryover.kind` — typed `CarryoverKind` (see
+// `planning/ticket-carryover-kind-typed-enum`). Task 1 introduced the enum;
+// these tests pin the three load-bearing properties: known values round-trip
+// exactly, unknown values round-trip byte-identically (not normalized), and
+// an unknown value never aborts the whole file's deserialization the way a
+// bare enum would.
+// ---------------------------------------------------------------------------
+
+/// Each of the four known `kind` values deserializes to `CarryoverKind::Known`
+/// and re-serializes to the exact same lowercase string.
+#[test]
+fn carryover_kind_known_values_round_trip() {
+    let cases = [
+        ("defect", KnownCarryoverKind::Defect),
+        ("deferred", KnownCarryoverKind::Deferred),
+        ("drift", KnownCarryoverKind::Drift),
+        ("env", KnownCarryoverKind::Env),
+    ];
+
+    for (raw_value, expected) in cases {
+        let raw = format!("\"{raw_value}\"");
+        let kind: CarryoverKind = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            kind,
+            CarryoverKind::Known(expected),
+            "{raw_value} must deserialize to Known(..)"
+        );
+
+        let round = serde_json::to_string(&kind).unwrap();
+        assert_eq!(
+            round, raw,
+            "{raw_value} must re-serialize to the exact same lowercase string"
+        );
+    }
+}
+
+/// An unknown `kind` value (one of the two actually observed in the wild,
+/// `gotcha` and `decision`) deserializes to `CarryoverKind::Unknown` and
+/// re-serializes BYTE-IDENTICALLY. Asserted as byte/string equality, not
+/// merely that parsing succeeded — a variant that parses but re-emits a
+/// normalized or defaulted value is exactly the `blocks[].model`
+/// silent-coercion bug (`core/mev/src/brain/state.rs:821`, carryover
+/// `orchestrator:state-json-model-vocab-has-no-opus`).
+#[test]
+fn carryover_kind_unknown_value_round_trips_byte_identically() {
+    for raw_value in ["gotcha", "decision"] {
+        let raw = format!("\"{raw_value}\"");
+        let kind: CarryoverKind = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            kind,
+            CarryoverKind::Unknown(raw_value.to_string()),
+            "{raw_value} must deserialize to Unknown(..) unchanged"
+        );
+
+        let round = serde_json::to_string(&kind).unwrap();
+        assert_eq!(
+            round, raw,
+            "{raw_value} must re-serialize byte-identically, not normalized"
+        );
+    }
+}
+
+/// The direct analogue of `core/mev/src/brain/state.rs:3411`, which pins that
+/// an unknown `BlockedBy` variant aborts deserialization of the *entire*
+/// file. `CarryoverKind`'s untagged fallback exists precisely so that does
+/// NOT happen for `kind`: a `state.json` with an unknown `kind` value must
+/// still load, producing no `StateLoadError::Parse`.
+///
+/// Red-first, verified manually on 2026-08-14: temporarily swapping
+/// `Carryover.kind`'s type from `CarryoverKind` to bare `KnownCarryoverKind`
+/// (no `Unknown` fallback, the shape this ticket exists to avoid — a plain
+/// `String` field is not a useful red case, since it accepts anything) and
+/// re-running this fixture through `load_state` reproduced exactly
+/// `StateLoadError::Parse { source: Error("unknown variant \`gotcha\`,
+/// expected one of \`defect\`, \`deferred\`, \`drift\`, \`env\`", ..) }` for
+/// the `"gotcha"` value below — the entire file failed to load over one
+/// unknown `kind`. `src/state.rs` was reverted to its committed,
+/// fallback-bearing shape immediately after (confirmed byte-identical to the
+/// pre-experiment file) and this test now asserts the fallback keeps the
+/// file loadable.
+#[test]
+fn carryover_kind_unknown_value_does_not_abort_file_load() {
+    let raw = r#"{
+        "repo": "bastion",
+        "kind": "project",
+        "updated": "2026-08-14",
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [
+            {
+                "slug": "ba15-12-mev-context-seed",
+                "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+                "kind": "gotcha",
+                "text": "seed mev context",
+                "related": [],
+                "created": "2026-06-20"
+            }
+        ]
+    }"#;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    std::fs::write(&path, raw).unwrap();
+
+    let file = load_state(&path).unwrap_or_else(|err| {
+        panic!("an unknown carryover kind must not abort the whole file's load, got: {err:?}")
+    });
+    assert_eq!(
+        file.carryover[0].kind,
+        CarryoverKind::Unknown("gotcha".to_string())
+    );
+
+    // Belt-and-suspenders: confirm the specific error variant this must never
+    // produce, matching the assertion shape of
+    // `load_state_malformed_json_is_parse_error` in `src/state.rs`.
+    let is_parse_error = |result: &Result<StateFile, StateLoadError>| {
+        matches!(result, Err(StateLoadError::Parse { .. }))
+    };
+    let result = load_state(&path);
+    assert!(
+        !is_parse_error(&result),
+        "an unknown kind must not produce StateLoadError::Parse"
     );
 }
 
