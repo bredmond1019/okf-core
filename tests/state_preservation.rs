@@ -17,8 +17,8 @@
 // surface only (`okf_core::StateFile` etc.), same posture as `tests/schema_conformance.rs`.
 
 use okf_core::{
-    BlockDep, BlockedBy, Carryover, ClearsWhen, ClearsWhenPredicate, ExternalDep, OperatorDep,
-    StateFile, TrackBlock,
+    ApprovalDep, BlockDep, BlockedBy, Carryover, ClearsWhen, ClearsWhenPredicate, ExternalDep,
+    OperatorDep, StateFile, TrackBlock,
 };
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
@@ -617,4 +617,125 @@ fn operator_edges_share_identity_across_two_blocks() {
         slug_a, slug_b,
         "the same operator gate must carry an identical slug on every block it covers"
     );
+}
+
+// ---------------------------------------------------------------------------
+// `BlockedBy` newtype-variant byte-identity round trips (task 2 of
+// ticket-blockedby-typeshare-export).
+//
+// Task 1 rewrote `BlockedBy`'s four variants from inline bodies to newtypes
+// over named payload structs, on the empirically-verified claim that serde
+// serializes a newtype-of-struct variant flat under internal tagging, so the
+// wire shape is unchanged. These tests are that claim's proof: each asserts
+// BYTE EQUALITY of the re-serialized value against the original `serde_json`
+// `Value`, not merely that parsing succeeds — a silently different output
+// (e.g. a reordered or renamed field) would still parse fine, and that is
+// the exact failure this refactor risks.
+// ---------------------------------------------------------------------------
+
+/// A cross-repo `block` dependency WITHOUT an optional `what` gloss.
+#[test]
+fn blockdep_without_what_round_trips_byte_identically() {
+    let raw = r#"{"type":"block","repo":"okf-core","id":"OK.1.A","what":null}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let dep: BlockedBy = serde_json::from_str(raw).unwrap();
+    match &dep {
+        BlockedBy::Block(BlockDep { repo, id, what }) => {
+            assert_eq!(repo, "okf-core");
+            assert_eq!(id, "OK.1.A");
+            assert_eq!(*what, None);
+        }
+        other => panic!("expected Block, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&dep).unwrap();
+    assert_eq!(original, round);
+}
+
+/// A cross-repo `block` dependency WITH the optional `what` gloss present.
+#[test]
+fn blockdep_with_what_round_trips_byte_identically() {
+    let raw =
+        r#"{"type":"block","repo":"mev","id":"MV.2.A","what":"needed for the graph builder"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let dep: BlockedBy = serde_json::from_str(raw).unwrap();
+    match &dep {
+        BlockedBy::Block(BlockDep { repo, id, what }) => {
+            assert_eq!(repo, "mev");
+            assert_eq!(id, "MV.2.A");
+            assert_eq!(what.as_deref(), Some("needed for the graph builder"));
+        }
+        other => panic!("expected Block, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&dep).unwrap();
+    assert_eq!(original, round);
+}
+
+/// An `external` dependency.
+#[test]
+fn externaldep_round_trips_byte_identically() {
+    let raw = r#"{"type":"external","what":"blocks every ticket run fleet-wide"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let dep: BlockedBy = serde_json::from_str(raw).unwrap();
+    match &dep {
+        BlockedBy::External(ExternalDep { what }) => {
+            assert_eq!(what, "blocks every ticket run fleet-wide");
+        }
+        other => panic!("expected External, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&dep).unwrap();
+    assert_eq!(original, round);
+}
+
+/// A four-field `operator` gate — all of `slug`, `exit`, `start`, and the
+/// optional `what` present.
+#[test]
+fn operatordep_round_trips_byte_identically() {
+    let raw = r#"{"type":"operator","slug":"session-mac-mini","exit":"planning/mac-mini-session-notes.md exists","start":"bastion sessions new mac-mini","what":"confirm the launchd restart"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let dep: BlockedBy = serde_json::from_str(raw).unwrap();
+    match &dep {
+        BlockedBy::Operator(OperatorDep {
+            slug,
+            exit,
+            start,
+            what,
+        }) => {
+            assert_eq!(slug, "session-mac-mini");
+            assert_eq!(exit, "planning/mac-mini-session-notes.md exists");
+            assert_eq!(start, "bastion sessions new mac-mini");
+            assert_eq!(what.as_deref(), Some("confirm the launchd restart"));
+        }
+        other => panic!("expected Operator, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&dep).unwrap();
+    assert_eq!(original, round);
+}
+
+/// An `approval` gate carrying its digest.
+#[test]
+fn approvaldep_round_trips_byte_identically() {
+    let raw =
+        r#"{"type":"approval","slug":"ship-it","what":"Ship the change","digest":"sha256:abc123"}"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let dep: BlockedBy = serde_json::from_str(raw).unwrap();
+    match &dep {
+        BlockedBy::Approval(ApprovalDep { slug, what, digest }) => {
+            assert_eq!(slug, "ship-it");
+            assert_eq!(what, "Ship the change");
+            assert_eq!(digest, "sha256:abc123");
+        }
+        other => panic!("expected Approval, got {other:?}"),
+    }
+
+    let round = serde_json::to_value(&dep).unwrap();
+    assert_eq!(original, round);
 }
