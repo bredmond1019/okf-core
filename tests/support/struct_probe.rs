@@ -147,6 +147,21 @@ impl HasExtra for okf_core::Carryover {
     }
 }
 
+/// `Reference` deliberately carries no `#[serde(flatten)]` capture map — it
+/// is the minimal permanently-true node (`slug`/`scope`/`class`/`text`/
+/// `created`/`related`/`reviewed`), and an unmodeled field on it is genuinely
+/// dropped by serde on deserialize rather than captured. `extra()` therefore
+/// always reports empty: there is no capture bucket a probed field could
+/// hide in, so the plain round-trip check in `struct_has_field` already
+/// distinguishes typed-and-present from dropped-and-absent correctly.
+impl HasExtra for okf_core::Reference {
+    fn extra(&self) -> &serde_json::Map<String, Value> {
+        static EMPTY: std::sync::OnceLock<serde_json::Map<String, Value>> =
+            std::sync::OnceLock::new();
+        EMPTY.get_or_init(serde_json::Map::new)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

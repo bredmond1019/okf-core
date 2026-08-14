@@ -1,7 +1,7 @@
 // Per-section field-NAME floor for the schema/struct conformance gate
 // (`3.1-schema-struct-conformance`).
 //
-// `schema_conformance.rs`'s four `!is_empty()` asserts are a floor of ONE —
+// `schema_conformance.rs`'s five `!is_empty()` asserts are a floor of ONE —
 // enough to catch total parser failure, not enough to catch PARTIAL parser
 // failure. `parse_field_tables`'s table detection is an exact string match
 // (`schema_parse.rs:98`, `| Field | Shape | Meaning |`), and its row
@@ -9,7 +9,7 @@
 // reformat — a renamed heading, an extra column, a table split under a new
 // sub-heading — can silently drop most of a section's rows while the
 // non-empty assert still passes. This module is the fix: a per-section
-// floor derived from ONE canonical source, so the four call sites in
+// floor derived from ONE canonical source, so the five call sites in
 // `schema_conformance.rs` never carry their own magic numbers.
 //
 // ## Canonical source chosen: an explicit per-section table, here
@@ -34,7 +34,7 @@
 //     self-maintaining for TIGHTENING (a legitimate doc removal that drops a
 //     documented field still requires a deliberate, reviewed edit here — that
 //     is the point, not a gap), but honest and singular: one list per
-//     section, in exactly one file. No four-call-site duplication, no
+//     section, in exactly one file. No five-call-site duplication, no
 //     reflection, no risk of the floor secretly depending on the same doc
 //     formatting it exists to protect against.
 //
@@ -83,15 +83,16 @@
 // What remains uncatchable: a field renamed SIMULTANEOUSLY in the doc, the
 // mapped struct, and this floor's list, in one edit — nothing short of
 // review catches that, and it is not silent, since it appears in the diff.
-// Also unchanged from before: this floor is scoped to exactly the four
-// sections `section_matches` maps to a struct, per the ticket's stated
-// out-of-scope; a fifth authored section in the doc is still unmapped and
-// unnoticed by this floor (deferred to a separate "table census" item).
+// This floor is scoped to exactly the five sections `section_matches` maps
+// to a struct (`reference[]` joined the other four via
+// `ticket-reference-container-schema-doc`, task 3); any further authored
+// section added to the doc without a matching edit here and in
+// `schema_conformance.rs` stays unmapped and unnoticed by this floor.
 
 /// The expected field names documented for a schema section, keyed by the
 /// same leading identifier `section_matches` (in `schema_conformance.rs`)
 /// uses to map a parsed heading to a struct: `Block vocabulary`, `backlog[]`,
-/// `epics[]`, `carryover[]`.
+/// `epics[]`, `carryover[]`, `reference[]`.
 ///
 /// This is a SUBSET floor, not an equality — every name returned here must
 /// appear among the section's parsed field names, but the parsed names may
@@ -99,9 +100,9 @@
 /// module doc comment above for the full rationale and what this still
 /// cannot catch.
 ///
-/// Panics on an unmapped section name: the four sections here are exactly
-/// the four `schema_struct_conformance` checks, so an unrecognised section
-/// is a caller bug (a typo'd identifier, or a fifth section added to the
+/// Panics on an unmapped section name: the five sections here are exactly
+/// the five `schema_struct_conformance` checks, so an unrecognised section
+/// is a caller bug (a typo'd identifier, or a sixth section added to the
 /// gate without updating this table), not a data condition to tolerate
 /// silently.
 pub fn expected_field_names(section: &str) -> &'static [&'static str] {
@@ -159,12 +160,21 @@ pub fn expected_field_names(section: &str) -> &'static [&'static str] {
             "reviewed",
             "snoozed_until",
         ],
+        "reference[]" => &[
+            "slug",
+            "scope",
+            "class",
+            "text",
+            "created",
+            "related",
+            "reviewed",
+        ],
         other => panic!(
             "expected_field_names: unmapped section `{other}` — the name \
-             floor only covers the four sections `section_matches` maps to \
+             floor only covers the five sections `section_matches` maps to \
              a struct (`Block vocabulary`, `backlog[]`, `epics[]`, \
-             `carryover[]`); if a new section needs a floor, add it here \
-             rather than skipping the check."
+             `carryover[]`, `reference[]`); if a new section needs a floor, \
+             add it here rather than skipping the check."
         ),
     }
 }
@@ -240,6 +250,18 @@ mod tests {
                 "snoozed_until",
             ]
         );
+        assert_eq!(
+            expected_field_names("reference[]"),
+            &[
+                "slug",
+                "scope",
+                "class",
+                "text",
+                "created",
+                "related",
+                "reviewed",
+            ]
+        );
     }
 
     #[test]
@@ -247,7 +269,13 @@ mod tests {
         // An empty list would defeat the point — it would tolerate total
         // parser failure the same way the old `!is_empty()` assert did not,
         // and the same way a floor of zero would under the count design.
-        for section in ["Block vocabulary", "backlog[]", "epics[]", "carryover[]"] {
+        for section in [
+            "Block vocabulary",
+            "backlog[]",
+            "epics[]",
+            "carryover[]",
+            "reference[]",
+        ] {
             assert!(
                 !expected_field_names(section).is_empty(),
                 "name list for `{section}` must be non-empty"

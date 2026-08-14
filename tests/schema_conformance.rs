@@ -3,8 +3,9 @@
 // Wires up `tests/support/{schema_doc,schema_parse,struct_probe}.rs` into a
 // single `cargo test` gate: every field the brain's authored
 // `docs/state/state-schema.md` pipe tables document as *authored* on one of
-// the four shared node types (`TrackBlock`, `Backlog`, `Epic`, `Carryover`)
-// must have a corresponding field on the matching okf-core struct.
+// the five shared node types (`TrackBlock`, `Backlog`, `Epic`, `Carryover`,
+// `Reference`) must have a corresponding field on the matching okf-core
+// struct.
 //
 // This closes the silent data-loss hole that deleted authored
 // `TrackBlock.note` values twice (2026-08-02, 2026-08-03): the doc always
@@ -19,7 +20,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use okf_core::{Backlog, Carryover, Epic, TrackBlock};
+use okf_core::{Backlog, Carryover, Epic, Reference, TrackBlock};
 
 use support::schema_doc::read_schema_doc;
 use support::schema_floor::expected_field_names;
@@ -75,6 +76,18 @@ fn carryover_seed() -> Value {
         "scope": {},
         "kind": "known_issue",
         "text": "seed carryover text",
+        "created": "2026-01-01",
+    })
+}
+
+/// Minimal valid seed JSON for `Reference` (needs `slug`, `scope`, `class`,
+/// `text`, `created`).
+fn reference_seed() -> Value {
+    json!({
+        "slug": "seed-reference",
+        "scope": {},
+        "class": "trap",
+        "text": "seed reference text",
         "created": "2026-01-01",
     })
 }
@@ -202,10 +215,23 @@ fn run_conformance_check(doc: &str) -> Vec<String> {
         &mut violations,
     );
 
+    let reference_fields: Vec<&DocumentedField> = fields
+        .iter()
+        .filter(|f| section_matches(&f.section, "reference[]"))
+        .collect();
+    check_field_name_floor("reference[]", &reference_fields, &mut violations);
+    check_struct::<Reference>(
+        reference_seed(),
+        &reference_fields,
+        &derived,
+        "Reference",
+        &mut violations,
+    );
+
     violations
 }
 
-/// The gate: every authored field documented on one of the four mapped
+/// The gate: every authored field documented on one of the five mapped
 /// sections has a corresponding field on the matching struct.
 #[test]
 fn schema_struct_conformance() {
@@ -236,17 +262,23 @@ fn schema_struct_conformance() {
 //     floor passed) must FAIL, naming the deleted field;
 //   - a field added and none removed (legitimate growth) must PASS with no
 //     edit to `schema_floor.rs` — this is the drift fix's regression guard;
-//   - zero parseable tables must FAIL loudly for all four sections.
+//   - zero parseable tables must FAIL loudly for all five sections.
 //
 // Every fixture marks all of its emitted fields DERIVED in a synthetic
 // `## Authored vs derived` table. That makes `check_struct` a no-op for
 // them, so a fixture can only ever fail on `check_field_name_floor` and
 // these tests stay isolated from struct-conformance concerns.
 
-/// The four sections the gate maps to a struct.
-const FIXTURE_SECTIONS: [&str; 4] = ["Block vocabulary", "backlog[]", "epics[]", "carryover[]"];
+/// The five sections the gate maps to a struct.
+const FIXTURE_SECTIONS: [&str; 5] = [
+    "Block vocabulary",
+    "backlog[]",
+    "epics[]",
+    "carryover[]",
+    "reference[]",
+];
 
-/// Build a self-contained fixture doc covering all four mapped sections.
+/// Build a self-contained fixture doc covering all five mapped sections.
 ///
 /// Each section starts from its real floor list
 /// (`schema_floor::expected_field_names`); `mutate` may then drop or add
@@ -367,7 +399,7 @@ fn floor_allows_growth_without_a_floor_edit() {
 }
 
 /// Total parse failure: headings present, no `| Field | Shape | Meaning |`
-/// table under any mapped section. Must fail for all four, and each
+/// table under any mapped section. Must fail for all five, and each
 /// violation must name that section's missing fields rather than report a
 /// bare observed count.
 #[test]
@@ -375,12 +407,13 @@ fn floor_fixture_with_zero_parseable_tables_fails_loudly() {
     let doc = "## Block vocabulary\n\nNo table here — total parser failure fixture.\n\n\
                ## backlog[]\n\nNo table here.\n\n\
                ## epics[]\n\nNo table here.\n\n\
-               ## carryover[]\n\nNo table here.\n";
+               ## carryover[]\n\nNo table here.\n\n\
+               ## reference[]\n\nNo table here.\n";
     let violations = run_conformance_check(doc);
 
     assert_eq!(
         violations.len(),
-        4,
+        5,
         "expected one floor violation per mapped section on total parse failure; got: {violations:?}"
     );
     for heading in FIXTURE_SECTIONS {
