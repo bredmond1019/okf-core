@@ -358,6 +358,33 @@ pub struct TrackBlock {
     /// byte-identical across an `emit-state --write`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub epics: Vec<String>,
+    /// Authoring date (`YYYY-MM-DD`) — when this block record was written.
+    ///
+    /// Authored, not derived. D65 makes the block record the authored
+    /// definition of a piece of work, and `created` is the date that
+    /// authorship happened. Skipped when absent so blocks without it stay
+    /// byte-identical across an `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Status-transition date (`YYYY-MM-DD`) — when this block moved to
+    /// `closed`.
+    ///
+    /// Authored. Paired with `commit` so a closed block records both *when*
+    /// and *by what change*. D65's tombstone shape for a closed block is
+    /// `{id, title, status, closed, commit}` — this is the `closed` half of
+    /// that pair. Skipped when absent for the same round-trip-safety reason
+    /// as every other optional field on this struct.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed: Option<String>,
+    /// Git hash of the commit that closed this block, for fast later
+    /// retrieval — the `commit` half of D65's `{id, title, status, closed,
+    /// commit}` tombstone shape for a closed block.
+    ///
+    /// Authored (or written by the closing automation), not derived by this
+    /// crate. Skipped when absent so blocks without it stay byte-identical
+    /// across an `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
     /// Unmodeled fields, captured whole so an authored key this struct does
     /// not (yet) know about survives a deserialize→serialize round-trip
     /// instead of being silently dropped.
