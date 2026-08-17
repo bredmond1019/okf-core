@@ -7,10 +7,24 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-14T15:10:00-03:00"
+timestamp: "2026-08-17T11:53:07-03:00"
 ---
 
 # Log
+
+## [2026-08-17]
+
+### block-vocab-extension closed; close-out's base_sha fallback proven end-to-end
+- **What:** Closed `OK.ticket.block-vocab-extension` (5/5) via `/sdlc-task`, in place on `main`.
+  `TrackBlock` gained `created`/`closed`/`commit: Option<String>`; `Origin.kind` gained a
+  `"carryover"` value alongside `"backlog"`. Ran `/close-out`: all 5 gates green, no coverage
+  gaps, docs already current. Deleted the `close-out-base-sha-fallback-is-dead-until-workflows-resync`
+  carryover — its `clears_when` resolved and is committed, and this run is the first proof the
+  fallback actually recovers a usable `base_sha` from an in-place `/sdlc-task` run's own state file.
+- **Why:** Last block-vocabulary ticket in the D65 lane — `TrackBlock` needed a tombstone shape
+  (`{id, title, status, closed, commit}`) for closed blocks, and blocks filed to resolve a
+  `carryover[]` entry needed the same provenance pointer a backlog promotion already had.
+- **Refs:** `planning/ticket-block-vocab-extension/tasks.md`.
 
 ## [2026-08-14]
 
