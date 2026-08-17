@@ -552,13 +552,21 @@ pub struct Epic {
 // Origin — backlog→block promotion provenance (v2)
 // ---------------------------------------------------------------------------
 
-/// Provenance pointer on a block that was promoted from a backlog item.
+/// Provenance pointer on a block that was promoted from a backlog item, or
+/// filed to resolve a carryover.
+///
+/// `kind` is a plain `String` rather than a Rust enum so that forward-compat
+/// values round-trip losslessly through this struct — but the two values
+/// producers write today are `"backlog"` (promoted from `backlog[]`) and
+/// `"carryover"` (filed to resolve a `carryover[]` entry). Both take the
+/// same `{type, slug}` shape: `slug` is the originating node's stable key
+/// in the respective array.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Origin {
-    /// Origin kind — `"backlog"` today.
+    /// Origin kind — `"backlog"` or `"carryover"`.
     #[serde(rename = "type")]
     pub kind: String,
-    /// The originating backlog node's stable `slug` key.
+    /// The originating backlog or carryover node's stable `slug` key.
     pub slug: String,
 }
 
@@ -1881,5 +1889,31 @@ mod tests {
             .find(|n| n.id == "BA.12.A")
             .expect("BA.12.A node");
         assert!(untagged.epics.is_empty());
+    }
+
+    #[test]
+    fn origin_deserializes_backlog_kind() {
+        let origin: Origin =
+            serde_json::from_str(r#"{"type":"backlog","slug":"ba15-12-mev-context-seed"}"#)
+                .expect("backlog origin parses");
+        assert_eq!(origin.kind, "backlog");
+        assert_eq!(origin.slug, "ba15-12-mev-context-seed");
+    }
+
+    #[test]
+    fn origin_deserializes_carryover_kind() {
+        // A ticket filed to resolve a carryover keeps provenance the same
+        // {type, slug} shape as a backlog promotion — see D65.
+        let origin: Origin =
+            serde_json::from_str(r#"{"type":"carryover","slug":"note-deletion-bug"}"#)
+                .expect("carryover origin parses");
+        assert_eq!(origin.kind, "carryover");
+        assert_eq!(origin.slug, "note-deletion-bug");
+
+        let json = serde_json::to_value(&origin).expect("serializes");
+        assert_eq!(
+            json,
+            serde_json::json!({"type": "carryover", "slug": "note-deletion-bug"})
+        );
     }
 }
