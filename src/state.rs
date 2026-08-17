@@ -1639,6 +1639,87 @@ mod tests {
         );
     }
 
+    // -- created / closed / commit / carryover origin -------------------------
+
+    #[test]
+    fn track_block_created_closed_commit_roundtrip_when_populated() {
+        // Every field the struct models is present explicitly, including the
+        // new created/closed/commit trio and a carryover-kind origin — same
+        // discipline as `project_fixture()` above, so `original == round` can
+        // only hold if nothing gets silently dropped on re-serialization.
+        let json = r#"{
+            "id": "OK.ticket.block-vocab-extension",
+            "title": "Extend TrackBlock",
+            "status": "closed",
+            "depends_on": [],
+            "wave": 1,
+            "origin": {"type": "carryover", "slug": "cortex-rename"},
+            "note": "closed cleanly",
+            "description": "adds created/closed/commit",
+            "priority": 1,
+            "due": "2026-08-20",
+            "sdlc_workflow": "task",
+            "model": "sonnet",
+            "epics": ["okf-vocab"],
+            "created": "2026-08-16",
+            "closed": "2026-08-17",
+            "commit": "abc1234"
+        }"#;
+        let block: TrackBlock = serde_json::from_str(json).unwrap();
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&block).unwrap();
+        assert_eq!(original, round);
+
+        assert_eq!(block.created.as_deref(), Some("2026-08-16"));
+        assert_eq!(block.closed.as_deref(), Some("2026-08-17"));
+        assert_eq!(block.commit.as_deref(), Some("abc1234"));
+        let origin = block.origin.as_ref().expect("origin present");
+        assert_eq!(origin.kind, "carryover");
+        assert_eq!(origin.slug, "cortex-rename");
+    }
+
+    #[test]
+    fn track_block_created_closed_commit_omitted_when_absent() {
+        // A block carrying none of the new fields must round-trip
+        // byte-identically too — the property the `note` deletion bug
+        // violated. Asserting only field presence (as opposed to full
+        // `Value` equality against the original JSON) would not have caught
+        // that bug, so this compares whole objects, not just key absence.
+        let json = r#"{
+            "id": "OK.other",
+            "title": "Untouched block",
+            "status": "open",
+            "depends_on": [],
+            "wave": null,
+            "origin": null,
+            "priority": null,
+            "due": null,
+            "sdlc_workflow": null,
+            "model": null
+        }"#;
+        let block: TrackBlock = serde_json::from_str(json).unwrap();
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&block).unwrap();
+        assert_eq!(original, round);
+
+        let obj = round.as_object().unwrap();
+        assert!(
+            !obj.contains_key("created"),
+            "created must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("closed"),
+            "closed must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("commit"),
+            "commit must be omitted when None"
+        );
+        assert_eq!(block.created, None);
+        assert_eq!(block.closed, None);
+        assert_eq!(block.commit, None);
+    }
+
     // -- epics ---------------------------------------------------------------
 
     #[test]
