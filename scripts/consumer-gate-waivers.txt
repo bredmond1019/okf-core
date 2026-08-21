@@ -16,4 +16,10 @@
 #      the consumer is confirmed passing again, delete this row — do not
 #      leave it "just in case".
 
-mev | unowned-mev-carryoverblocks-arm | core/mev/src/brain/state.rs's exhaustive match on StateEdgeKind has no arm for CarryoverBlocks, added by OK.4.B; mev fails to compile until an owning fix lands
+# No waivers currently seeded. The mev row (unowned-mev-carryoverblocks-arm,
+# covering core/mev/src/brain/state.rs's exhaustive StateEdgeKind match
+# missing a CarryoverBlocks arm from OK.4.B) was deleted 2026-08-21 by
+# OK.5.A task 6's real-fleet evidence run: mev now classifies `pass`
+# (verified at core/mev/src/brain/state.rs:1814, `StateEdgeKind::CarryoverBlocks => {}`),
+# which made the waiver itself fail the gate as stale — exactly the
+# self-deleting behaviour this file's header documents.
