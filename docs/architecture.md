@@ -481,6 +481,59 @@ convenience, not a gate** — with the CLI absent it prints an install hint and 
 never hard-block a machine that lacks it. It also probes `~/.cargo/bin` before concluding the CLI
 is missing, since `cargo install` puts it there and that directory is not on every machine's PATH.
 
+## Consumer compile gate
+
+`okf-core` is the root of the fan-out: `mev`, `bastion` and `engine-rs` all depend on it by path
+(`engine-rs` via `[workspace.dependencies]`), and until OK.5.A nothing in okf-core's own harness
+looked downstream. Three changes broke a consumer invisibly — OK.3.B, D58, and OK.4.B, whose
+`StateEdgeKind::CarryoverBlocks` variant broke mev's exhaustive match on `StateEdgeKind` at
+`src/brain/state.rs:1734` and left `cargo install` of both mev and bastion failing — and all three
+breaks lived in code a plain `cargo build` cannot see: struct literals and match arms that only
+**test** targets construct. That is why `scripts/check_consumers.sh` compiles each consumer's
+test targets (`cargo nextest run --no-run --locked`) rather than its library source, and why it
+never runs them (`--no-run`): the gate exists to prove the code still compiles against okf-core's
+current shape, not to re-run a consumer's test suite from a sibling repo.
+
+Discovery reads `brain.toml`'s `[[repos]]` list and walks every consumer's `dependencies`,
+`dev-dependencies`, `build-dependencies` and `workspace.dependencies` tables for a `path` entry
+resolving to okf-core — never a hardcoded slug list, and never matched by dependency *name*, since
+a renamed dependency must still be found.
+
+### Verdicts
+
+| Verdict | Meaning | Fails the gate? |
+|---|---|---|
+| `pass` | The consumer's test targets compiled clean. | No |
+| `broken` | Compilation failed with one or more rustc `error[E....]` diagnostics — sited by file:line. | Yes, unless waived |
+| `lockfile-stale` | Cargo refused with "cannot update the lock file" (`--locked` was violated) — decided by the stderr signature, never by exit code, since exit 101 has been observed for both a real break and a stale lock. | No |
+| `skipped-dirty` | The consumer's git tree was dirty; its compile result would not be evidence about okf-core either way, so cargo is never even spawned. | No |
+| `not-evaluable` | A failure matched no known signature (including a Cargo.lock hash that moved across the run — proof `--locked` was defeated), so it is reported rather than guessed as `broken`. | No |
+
+Only `broken` (unwaived) fails the gate — the other three verdicts are explicitly not evidence
+that okf-core caused a problem, so a red gate for one of them is not automatically okf-core's bug;
+read the reported reason before assuming otherwise.
+
+### Waivers — how to add one, and why they self-delete
+
+`scripts/consumer-gate-waivers.txt` is the only sanctioned way to keep okf-core pushable while a
+consumer is knowingly broken by something outside this repo. Each row is
+`<slug> | <owning-block-id> | <reason>`; all three fields are mandatory — a waiver with no owning
+block is how debt becomes permanent, so a malformed row is a hard error naming the offending line.
+
+A `broken` consumer with a matching waiver reports `broken (waived by <block-id>)` and does not
+fail the gate. Critically, **a waiver for a consumer that now passes FAILS the gate** with `stale
+waiver` — this is what stops the file from rotting. Once the owning block lands and the consumer
+compiles again, the waiver itself must be *deleted*, not left in place: its mere presence is what
+now breaks the build. Do not "fix" a stale-waiver failure by keeping the row; remove it.
+
+### Relationship to `mev check-consumers`
+
+`mev` already runs this same idea against its own crate — `mev check-consumers`, hardcoded to
+`env!("CARGO_MANIFEST_DIR")` with no target-crate flag. okf-core cannot link `mev` as a library
+(mev depends on okf-core, not the reverse), so the *behaviour* is carried across into
+`scripts/check_consumers.sh` but the *implementation* is a separate script. Gating `mev
+check-consumers` itself is a different, tracked block (`mev` MV.18.A) — untouched here.
+
 ## See also
 
 - [`../README.md`](../README.md) — crate overview, consumers, dependencies
