@@ -143,11 +143,6 @@ impl ApprovalDep {
 /// (see [`op_slug_stutters`]). Exported as a `const` so okf-core and mev
 /// share one literal instead of two independently-typed strings that could
 /// drift.
-// Not yet re-exported from the crate root (that's task 3 of
-// OK.ticket.op-slug-stutter-warning) nor used by the inherent methods
-// (task 2) or tests (tasks 4/5), so clippy sees this as unreachable dead
-// code until those land. Remove this `allow` once they do.
-#[allow(dead_code)]
 pub const W_STATE_OP_SLUG_STUTTER: &str = "W_STATE_OP_SLUG_STUTTER";
 
 /// Renders the D76 display identity for an operator/approval edge slug as
@@ -158,7 +153,6 @@ pub const W_STATE_OP_SLUG_STUTTER: &str = "W_STATE_OP_SLUG_STUTTER";
 /// stuttering `OP.operator-mac-mini-visit` rather than being silently
 /// cleaned up. The stutter must stay visible until the slug itself is
 /// renamed by the sweep (`MV.ticket.op-slug-rendering-and-sweep`).
-#[allow(dead_code)]
 pub fn op_id(slug: &str) -> String {
     format!("OP.{slug}")
 }
@@ -170,7 +164,6 @@ pub fn op_id(slug: &str) -> String {
 /// `operator` and `operator-` are both `false` (no remainder to strip);
 /// `operators-guild` is `false` (its prefix is `operators-`, not the exact
 /// literal `operator-`).
-#[allow(dead_code)]
 pub fn op_slug_stutters(slug: &str) -> bool {
     slug.strip_prefix("operator-")
         .is_some_and(|rest| !rest.is_empty())
@@ -184,7 +177,6 @@ pub fn op_slug_stutters(slug: &str) -> bool {
 /// exactly what `op_slug_stutters` excludes, so a doubled prefix like
 /// `operator-operator-x` normalizes to `operator-x` (which still stutters
 /// and is reported again) rather than being fully cleaned in one pass.
-#[allow(dead_code)]
 pub fn normalize_op_slug(slug: &str) -> &str {
     if op_slug_stutters(slug) {
         &slug["operator-".len()..]
