@@ -907,8 +907,22 @@ pub struct AmendsRef {
 /// flattened JSON text is identical either way; only an assertion on the
 /// parsed *structure* (`row.entry.extra` must not contain these five keys)
 /// can catch the relocation. See the tests added alongside this struct.
+///
+/// **Deliberately NOT `#[typeshare]`-annotated, and it must never be.** Its
+/// `entry` field is `#[serde(flatten)]`, which typeshare cannot represent —
+/// the CLI fails the whole run with `Parsing error: "The serde flatten
+/// attribute is not currently supported"`. Two things make that worse than a
+/// missing type: typeshare parses **source text** and does not honour `cfg`
+/// features, so a `#[cfg_attr(feature = "typeshare", ...)]` guard does not
+/// hide the annotation from it; and the failure is not scoped to this type —
+/// it aborts generation for every consumer scanning this crate. Measured
+/// 2026-08-21: `core/bastion/scripts/gen-types.sh` scans `../okf-core/src`
+/// for the four `BlockedBy` payload structs and exited 1 before writing
+/// anything, taking `check-typeshare-drift.sh` down with it, until this
+/// annotation was removed. A consumer that needs this shape on the wire must
+/// declare a local mirror, the way `bastion`'s `src/serve/dto.rs` already
+/// does for `StateEdgeKind` and `BlockLane`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
 pub struct CarryoverArchiveRow {
     /// The disposed entry, embedded verbatim — including its own
     /// unmodeled `extra` map. Unchanged by this block.
@@ -2844,6 +2858,87 @@ mod tests {
         assert_eq!(
             amends_value.get("disposed_at").and_then(|v| v.as_str()),
             Some("2026-08-01")
+        );
+    }
+
+    /// Guard rail for a break that took down a downstream repo's whole type
+    /// generator, not merely one type.
+    ///
+    /// `typeshare` cannot represent `#[serde(flatten)]`. Critically, its CLI
+    /// parses **source text** and does not evaluate `cfg` features, so
+    /// wrapping the annotation in `#[cfg_attr(feature = "typeshare", ...)]`
+    /// does not hide it — and the resulting `Parsing error: "The serde
+    /// flatten attribute is not currently supported"` aborts generation for
+    /// the entire scanned tree, not just the offending type.
+    ///
+    /// Measured 2026-08-21: `CarryoverArchiveRow` carried both, and
+    /// `core/bastion/scripts/gen-types.sh` — which scans this crate's `src/`
+    /// for the four `BlockedBy` payload structs — exited 1 before writing
+    /// anything, leaving `check-typeshare-drift.sh` unrunnable and
+    /// `types/serve.ts` silently stale across two closed blocks.
+    ///
+    /// Asserting on the source text is deliberate: this is a property of what
+    /// an external tool can parse, so no amount of runtime behaviour can
+    /// observe it. Nothing else in this workspace would catch a reintroduction.
+    #[test]
+    fn no_typeshare_annotated_type_also_uses_serde_flatten() {
+        const SRC: &str = include_str!("state.rs");
+        const TYPESHARE_ATTR: &str = "#[cfg_attr(feature = \"typeshare\", typeshare::typeshare)]";
+
+        let lines: Vec<&str> = SRC.lines().collect();
+
+        // Positive control: if the attribute spelling ever changes, this test
+        // would scan nothing and pass vacuously — which is exactly the silent
+        // false-negative it exists to prevent.
+        let annotated_count = lines
+            .iter()
+            .filter(|l| l.trim_start().starts_with(TYPESHARE_ATTR))
+            .count();
+        assert!(
+            annotated_count >= 4,
+            "expected at least the four BlockedBy payload structs to be typeshare-annotated; \
+             found {annotated_count}. The attribute spelling probably changed — fix this test's \
+             TYPESHARE_ATTR before trusting it again."
+        );
+
+        let mut offenders: Vec<String> = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            if !line.trim_start().starts_with(TYPESHARE_ATTR) {
+                continue;
+            }
+            // Walk forward to the item name, then through its body to the
+            // closing brace at the same indentation the item opened at.
+            let mut j = i + 1;
+            while j < lines.len() && !lines[j].contains(" struct ") && !lines[j].contains(" enum ")
+            {
+                j += 1;
+            }
+            if j >= lines.len() {
+                continue;
+            }
+            let item_name = lines[j]
+                .split_whitespace()
+                .skip_while(|w| *w != "struct" && *w != "enum")
+                .nth(1)
+                .unwrap_or("<unknown>")
+                .trim_end_matches('{')
+                .trim();
+            let mut k = j;
+            while k < lines.len() && lines[k] != "}" {
+                if lines[k].contains("serde(flatten") {
+                    offenders.push(format!("{item_name} (line {})", k + 1));
+                    break;
+                }
+                k += 1;
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "these typeshare-annotated types use #[serde(flatten)], which breaks every downstream \
+             typeshare run against this crate: {offenders:?}. Remove the typeshare annotation and \
+             have the consumer declare a local mirror instead (see CarryoverArchiveRow's doc \
+             comment)."
         );
     }
 }
