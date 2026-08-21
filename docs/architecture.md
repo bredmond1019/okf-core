@@ -24,7 +24,7 @@ owns four brain contracts as a single source of truth, consumed by sibling crate
 | `parse` | `src/parse.rs` | `Frontmatter`, `ParseResult`, `extract_frontmatter`, `parse_frontmatter` — the flat frontmatter read path |
 | `graph` | `src/graph.rs` | `Edge`, `EdgeKind`, `Graph`, `Node`, `GraphArtifact`, `resolve_edge` — the brain structural graph model |
 | `graph_emit` | `src/graph_emit.rs` | `ExportedEdge`, `GraphExport`, `build_graph_export` — graph export for `mev emit-graph` |
-| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `CarryoverKind` (+ `KnownCarryoverKind`), `Reference`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `load_state`, `build_state_graph` — the `planning/state.json` schema and its derived graph |
+| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `CarryoverKind` (+ `KnownCarryoverKind`), `CarryoverArchiveRow`, `DisposalReason`, `AmendsRef`, `Reference`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `load_state`, `build_state_graph` — the `planning/state.json` schema and its derived graph |
 | `doc` | `src/doc/*.rs` | The typed **brain-document** layer — see below |
 
 All public items are re-exported flat from `src/lib.rs`; consumers import everything as
