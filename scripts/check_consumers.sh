@@ -53,6 +53,28 @@
 #       is a hard error naming the valid ones; nothing is compiled.
 set -euo pipefail
 
+# --- Scrub the inherited git environment. LOAD-BEARING, not hygiene. ---
+#
+# When this gate runs from `hooks/pre-push` (which is the whole point of it
+# being `gates: true`), git exports GIT_DIR — and an inherited GIT_DIR
+# OVERRIDES `git -C <dir>`, silently. Every `git -C "$repo_dir" status
+# --porcelain` below then reports on okf-core's own repository instead of
+# the consumer's, so every consumer inherits okf-core's cleanliness rather
+# than its own and discovery/classification quietly answer the wrong
+# question.
+#
+# Measured 2026-08-21, OK.5.A: scripts/test_check_consumers.sh passes 21/21
+# from a shell and 3/21 under the pre-push hook, from this cause alone.
+# Identical root cause to mev's MV.17.A P0, where an inherited GIT_DIR made
+# a fixture run `git init`/`worktree add` against the real core/mev repo;
+# mev's fix was a shared `git_command()` that scrubs the same variables.
+#
+# Reproduce before touching this:
+#   scripts/test_check_consumers.sh                       # 21/21
+#   GIT_DIR=$PWD/.git scripts/test_check_consumers.sh     # 3/21
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_NAMESPACE
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -61,7 +83,18 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # looking for brain.toml (same idiom as scripts/check-typeshare.sh's
 # REPO_ROOT resolution, one level further up the tree).
 # ---------------------------------------------------------------------------
+# OKF_BRAIN_ROOT overrides the upward walk. Test-only escape hatch, mirroring
+# base-template's FLEET_LOCK_DIR: it is the only way to exercise the
+# zero-discovered-consumers guard without a real fleet to point at.
 find_brain_root() {
+    if [ -n "${OKF_BRAIN_ROOT:-}" ]; then
+        if [ ! -f "$OKF_BRAIN_ROOT/brain.toml" ]; then
+            echo "check_consumers: OKF_BRAIN_ROOT=$OKF_BRAIN_ROOT has no brain.toml" >&2
+            exit 1
+        fi
+        printf '%s\n' "$OKF_BRAIN_ROOT"
+        return 0
+    fi
     local dir="$SCRIPT_DIR"
     while [ "$dir" != "/" ]; do
         if [ -f "$dir/brain.toml" ]; then
@@ -676,6 +709,27 @@ EOF
 
 main() {
     discover_consumer_records
+
+    # Zero discovered consumers is a BROKEN GATE, never a clean run.
+    #
+    # okf-core has had at least three path-dependent consumers throughout its
+    # life, so an empty list means discovery itself failed — a moved
+    # brain.toml, an unreadable repo, or the inherited-GIT_DIR class of bug
+    # the scrub at the top of this file exists to prevent. Reporting "all
+    # consumers pass" on the strength of having checked none is precisely the
+    # confident, clean-looking WRONG answer CLAUDE.md standing rule 11 is
+    # about, and it is how a gate silently stops gating. Fail loudly instead.
+    #
+    # `--list` is exempt: printing an empty list is a legitimate answer to a
+    # question about discovery, and exempting it keeps the diagnostic usable
+    # for debugging the very failure this guard reports.
+    if [ "${#CONSUMER_SLUGS[@]}" -eq 0 ] && [ "${1:-}" != "--list" ]; then
+        echo "check_consumers: discovered ZERO consumers from $BRAIN_TOML — refusing to report a pass." >&2
+        echo "  This is a discovery failure, not a clean fleet: okf-core has three path-dependent consumers." >&2
+        echo "  Check that brain.toml is readable and that GIT_DIR is not inherited (see the scrub at the top of this script)." >&2
+        exit 1
+    fi
+
     # Validated against the FULL discovered list, before --consumer (below)
     # narrows it — a waiver's validity must never depend on which flag the
     # gate was run with.

@@ -178,6 +178,17 @@ cat > "$BIN/git" <<SH
 REAL_GIT="$REAL_GIT_BIN"
 if [ "\$1" = "-C" ]; then
     dir="\$2"
+    # EMULATE REAL GIT'S PRECEDENCE, do not simplify this away.
+    #
+    # An inherited GIT_DIR OVERRIDES \`-C <dir>\`: real git reports on the
+    # GIT_DIR repository and ignores the directory it was pointed at. A shim
+    # that honours -C unconditionally cannot reproduce the class of bug that
+    # blocked OK.5.A's own push (21/21 from a shell, 3/21 under the pre-push
+    # hook), so the regression cases below would pass against a script with
+    # no env scrub at all — i.e. the test would be decorative.
+    if [ -n "\${GIT_DIR:-}" ]; then
+        dir="\$(dirname "\$GIT_DIR")"
+    fi
     if [ "\$3" = "status" ] && [ "\$4" = "--porcelain" ]; then
         if [ -f "\$dir/.fake-git-status" ]; then
             cat "\$dir/.fake-git-status"
@@ -516,6 +527,64 @@ run_gate_with_script "$CONTROL2_SCRIPT" --json
 check "control 2 (exit-code-before-signature): lockfile-at-101 now goes red (misclassified)" \
     "$( printf '%s' "$OUT" | grep -q '"verdict":"broken"' && echo 0 || echo 1 )"
 rm -f "$CONTROL2_SCRIPT"
+
+# ---------------------------------------------------------------------------
+# Hook-environment regression (OK.5.A hotfix, 2026-08-21).
+#
+# `hooks/pre-push` exports GIT_DIR, and an inherited GIT_DIR OVERRIDES
+# `git -C <dir>` — silently. Before the scrub at the top of
+# check_consumers.sh, this suite passed 21/21 from a shell and 3/21 under
+# the real hook, which is how a gate that had just been merged as
+# `gates: true` blocked the very push that would have delivered it.
+#
+# These two cases are the positive control for that scrub. They set the
+# hook's variables explicitly and assert the gate still answers about the
+# CONSUMER, not about okf-core. Same root cause as mev's MV.17.A P0.
+# ---------------------------------------------------------------------------
+run_gate_hookenv() { # like run_gate, but with the pre-push hook's git env set
+    OUT="$(PATH="$TEST_PATH" \
+        GIT_DIR="$OKF/.git" \
+        GIT_WORK_TREE="$OKF" \
+        GIT_PREFIX="" \
+        "$OKF/scripts/check_consumers.sh" "$@" 2>&1)"
+    RC=$?
+}
+
+reset_fixtures
+run_gate_hookenv --list
+check "hook env: discovery still finds all three consumers with GIT_DIR/GIT_WORK_TREE set" \
+    "$( [ "$(printf '%s\n' "$OUT" | sort)" = "$(printf 'bastion\nengine-rs\nmev\n' | sort)" ] && echo 0 || echo 1 )"
+
+# THE discriminating case. bastion is dirty; the fixture okf-core that
+# GIT_DIR points at is clean. With the scrub, `git -C bastion status` reports
+# bastion => skipped-dirty. Without it, GIT_DIR wins, bastion inherits
+# okf-core's clean status, cargo gets spawned against a dirty tree, and the
+# verdict is a meaningless `pass`. Delete the scrub and this case goes red.
+reset_fixtures
+set_git_dirty bastion
+set_cargo_fixture bastion 0 ""
+run_gate_hookenv --json
+check "hook env: a dirty consumer is still seen as dirty (GIT_DIR must not mask it)" \
+    "$(printf '%s' "$OUT" | grep -q '"slug":"bastion","verdict":"skipped-dirty"' && echo 0 || echo 1)"
+check "hook env: cargo was still never spawned for the dirty consumer" \
+    "$( ! cargo_was_called bastion && echo 0 || echo 1 )"
+
+# ---------------------------------------------------------------------------
+# Zero discovered consumers must FAIL, never report a pass. This is the
+# symptom the GIT_DIR bug actually produced, and reporting "all pass" on the
+# strength of having checked nothing is the silent-green failure the gate
+# exists to prevent (CLAUDE.md standing rule 11).
+# ---------------------------------------------------------------------------
+reset_fixtures
+EMPTY_BRAIN="$(mktemp -d)"
+mkdir -p "$EMPTY_BRAIN"
+printf '# no [[repos]] at all\n' > "$EMPTY_BRAIN/brain.toml"
+OUT="$(PATH="$TEST_PATH" OKF_BRAIN_ROOT="$EMPTY_BRAIN" "$OKF/scripts/check_consumers.sh" --json 2>&1)"; RC=$?
+check "zero discovered consumers exits non-zero rather than reporting a pass" \
+    "$( [ "$RC" -ne 0 ] && echo 0 || echo 1 )"
+check "zero discovered consumers says so explicitly" \
+    "$(printf '%s' "$OUT" | grep -q 'ZERO consumers' && echo 0 || echo 1)"
+rm -rf "$EMPTY_BRAIN"
 
 echo
 echo "--- shown-failing control output (also destined for tasks.md Notes) ---"
