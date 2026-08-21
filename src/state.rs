@@ -833,6 +833,35 @@ pub struct Carryover {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+/// Why a carryover entry left `state.json` — the closed vocabulary for
+/// [`CarryoverArchiveRow::reason`].
+///
+/// Deliberately the mirror image of [`CarryoverKind`]: `CarryoverKind`
+/// degrades an unrecognized value to `Unknown(String)` because a carryover
+/// with a strange `kind` is a live entry someone can fix in place later.
+/// `DisposalReason` has NO such fallback and NO `#[serde(other)]` — the
+/// archive this feeds is append-only (`planning/carryover-archive.jsonl`),
+/// so a mistyped reason is not a fixable live value, it is a permanent line
+/// in a file nothing ever edits. Rejecting an unknown reason at parse time,
+/// loudly, is cheaper than a wrong row that outlives the mistake.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+// Not yet referenced: `CarryoverArchiveRow` (which embeds this as its
+// `reason` field) and the crate-root re-export land in the next two tasks
+// of this same block (OK.4.A tasks 3-4).
+#[allow(dead_code)]
+pub enum DisposalReason {
+    /// The condition that made this entry matter is gone.
+    Cleared,
+    /// A newer entry replaces this one; see `amends` on the newer row.
+    Superseded,
+    /// The entry graduated into a tracked block, session, or reference.
+    Promoted,
+    /// Retired without being resolved (e.g. reclassified, judged out of scope).
+    Withdrawn,
+}
+
 /// A permanently-true reference entry: a trap, measured design invariant,
 /// distilled lesson, or deliberate-choice marker that can never be "done".
 ///
