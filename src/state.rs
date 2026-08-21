@@ -1885,6 +1885,38 @@ mod tests {
     }
 
     #[test]
+    fn carryover_enforce_absent_round_trips_byte_identically() {
+        // The churn-free adoption contract: a `state.json` whose carryover
+        // entries carry NO `enforce` key anywhere must serialize back with
+        // no `"enforce"` key added — this is what makes the field safe to
+        // land across the ~200 live carryover entries fleet-wide without a
+        // single-field diff on every one of them.
+        let json = carryover_fixture(
+            "",
+            r#"[{"type": "block", "repo": "okf-core", "id": "OK.9.Z", "what": null}]"#,
+        );
+        let before: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let file: StateFile = serde_json::from_str(&json).unwrap();
+        let after = serde_json::to_value(&file).unwrap();
+
+        let before_carryover = &before["carryover"][0];
+        let after_carryover = &after["carryover"][0];
+        assert!(
+            before_carryover.get("enforce").is_none(),
+            "fixture must not author an enforce key"
+        );
+        assert!(
+            after_carryover.get("enforce").is_none(),
+            "round-tripping must not add an enforce key, got: {after_carryover}"
+        );
+        assert_eq!(
+            before_carryover, after_carryover,
+            "carryover entry must round-trip byte-identically with no enforce key"
+        );
+    }
+
+    #[test]
     fn block_shape_fields_roundtrip() {
         let json_with_fields = r#"{
             "repo": "okf-core",
