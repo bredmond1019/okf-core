@@ -1074,6 +1074,11 @@ pub struct StateSource {
 ///
 /// `BlockedBy` edges come from `tracks[].blocks[].depends_on[]{type:"block"}`
 /// entries. `CrossRepo` edges come from brain-file `cross_repo[]` arrays.
+/// `CarryoverBlocks` edges come from `carryover[].blocks[]{type:"block"}`
+/// entries. `CarryoverBlocks` is the one edge kind whose `to_ref` does NOT
+/// resolve to a node — it names a carryover (`"carryover:<repo>/<slug>"`),
+/// which is targetless in the same way an operator gate is, so consumers
+/// doing dangling, cycle, or topological work must skip it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StateEdgeKind {
@@ -1081,6 +1086,9 @@ pub enum StateEdgeKind {
     BlockedBy,
     /// An explicit cross-repo dependency declared in a brain file's `cross_repo[]`.
     CrossRepo,
+    /// A `carryover[].blocks[]{type:"block"}` gating edge. Targetless on the
+    /// `to_ref` side — see the enum doc comment.
+    CarryoverBlocks,
 }
 
 /// A directed edge in the state block graph.
