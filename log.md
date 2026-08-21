@@ -14,6 +14,43 @@ timestamp: "2026-08-17T11:53:07-03:00"
 
 ## [run: 2026-08-21]
 
+### OK.5.A closed — consumer compile gate in okf-core
+Implemented across tasks 1-7 via `/sdlc-flow`, PASS. `scripts/check_consumers.sh` gives okf-core a
+gating downstream check: it discovers every repo in `brain.toml` whose Cargo.toml resolves a path
+dependency to okf-core (today mev, bastion, engine-rs -- engine-rs found via
+`[workspace.dependencies]`, never a hardcoded slug), skips a dirty consumer tree without ever
+spawning cargo, hashes `Cargo.lock` before and after, and runs `cargo nextest run --no-run --locked`
+into a fresh `CARGO_TARGET_DIR` to classify each consumer pass / broken / lockfile-stale /
+skipped-dirty / not-evaluable -- by stderr signature, never exit code alone, since both broken and
+lockfile-stale have been observed at exit 101. `scripts/consumer-gate-waivers.txt` is the checked-in
+escape hatch: every row must name a consumer slug, an owning block ID, and a reason, a waived
+`broken` consumer passes, and a waiver for a consumer that now passes FAILS the gate as stale so the
+list cannot silently rot. Registered as two gating checks (`consumer-compile-gate`,
+`consumer-gate-tests`) in `planning/harness.json`; `docs/architecture.md` documents what the gate
+compiles, why test targets and not source, and how a waiver works. `scripts/test_check_consumers.sh`
+shims `cargo` and `git` so no consumer is ever compiled by the test suite, covering discovery, every
+classification signature, and all four waiver rules, with both shown-failing controls (an
+exit-code-before-signature bug, a deleted stale-waiver check) actually executed and confirmed red.
+Task 6 ran the finished gate against the real fleet as the required evidence: the expected shape
+(mev broken, covered by a seeded waiver) did not hold -- mev now passes because OK.4.B's
+`CarryoverBlocks` match arm landed since the spec was written -- so the seeded mev waiver was deleted
+as stale per the spec's own fallback instruction, with the verbatim before/after output recorded in
+`planning/OK.5.A/tasks.md`. Next: mev MV.18.A (mev's own consumer gate) and cross-repo watch for the
+next consumer break the gate would now catch.
+
+```
+9536ff2 feat: implement OK.5.A-task6
+361c150 feat: implement OK.5.A-task5
+f063386 feat: implement OK.5.A-task4
+eb47afd feat: implement OK.5.A-task3
+f8c3e03 feat: implement OK.5.A-task2
+be20b7a feat: implement OK.5.A-task1
+9489dad chore: init worktree OK.5.A-flow
+a7f60dd chore(harness): pull base-template harness sync (37fa5e8)
+```
+
+## [run: 2026-08-21]
+
 ### OK.4.B closed — CarryoverBlocks edges derived from carryover[].blocks
 Implemented across tasks 1-6 via `/sdlc-flow`, PASS. `Carryover` gained `enforce: Option<bool>`
 (`#[serde(default, skip_serializing_if = "Option::is_none")]`, `None == Some(true)`, so the ~200
