@@ -808,6 +808,17 @@ pub struct Carryover {
     /// has no node target.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<BlockedBy>,
+    /// Per-entry opt-out for whether `blocks[]` is honored as a gating edge.
+    /// `None` and `Some(true)` are IDENTICAL in meaning — both enforce; only
+    /// `Some(false)` opts out. Deliberately `Option<bool>`, not a plain
+    /// `bool` defaulting to `true`: a plain bool would serialize
+    /// `"enforce": true` onto all ~200 live carryover entries fleet-wide on
+    /// the next `mev emit-state --write`, which is ~200 files of churn and a
+    /// conflict for every concurrent lane. `Option<bool>` with
+    /// `skip_serializing_if` means an entry that never mentions `enforce`
+    /// stays byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enforce: Option<bool>,
     /// Free-form shared identity string linking the same finding filed in
     /// several repos. No registry, many-to-one by construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
