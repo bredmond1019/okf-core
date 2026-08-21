@@ -1712,6 +1712,178 @@ mod tests {
         assert_eq!(graph.edges[0].to_ref, "mev:MV.3.P");
     }
 
+    /// Builds a minimal single-carryover `state.json` fixture with the given
+    /// `enforce` field literal (e.g. `""`, `,"enforce": true`, `,"enforce":
+    /// false"`) and `blocks[]` array literal spliced in verbatim, so the
+    /// table test below can drive every (enforce x blocks-entry-kind) cell
+    /// through one real parse + build_state_graph pass rather than
+    /// constructing structs by hand.
+    fn carryover_fixture(enforce_field: &str, blocks_field: &str) -> String {
+        format!(
+            r#"{{
+                "repo": "okf-core",
+                "kind": "project",
+                "updated": "2026-07-01",
+                "carryover": [
+                    {{
+                        "slug": "held-by-this",
+                        "scope": {{"repo": "okf-core", "tier": null, "cross_repo": null}},
+                        "kind": "deferred",
+                        "text": "blocks OK.9.Z",
+                        "related": [],
+                        "blocks": {blocks_field},
+                        "clears_when": null,
+                        "created": "2026-08-21"{enforce_field}
+                    }}
+                ]
+            }}"#
+        )
+    }
+
+    #[test]
+    fn build_state_graph_carryover_blocks_table() {
+        // (enforce absent | Some(true) | Some(false)) x (blocks[] entry
+        // Block | External) — six cells, exact edge count asserted for
+        // each, and the full from/to_ref/kind triple asserted for every
+        // emitting cell.
+        const BLOCK_ENTRY: &str =
+            r#"[{"type": "block", "repo": "okf-core", "id": "OK.9.Z", "what": null}]"#;
+        const EXTERNAL_ENTRY: &str = r#"[{"type": "external", "what": "waiting on infra"}]"#;
+
+        struct Case {
+            name: &'static str,
+            enforce_field: &'static str,
+            blocks_field: &'static str,
+            expect_edges: usize,
+        }
+
+        let cases = [
+            Case {
+                name: "enforce absent + block",
+                enforce_field: "",
+                blocks_field: BLOCK_ENTRY,
+                expect_edges: 1,
+            },
+            Case {
+                name: "enforce true + block",
+                enforce_field: r#", "enforce": true"#,
+                blocks_field: BLOCK_ENTRY,
+                expect_edges: 1,
+            },
+            Case {
+                name: "enforce false + block",
+                enforce_field: r#", "enforce": false"#,
+                blocks_field: BLOCK_ENTRY,
+                expect_edges: 0,
+            },
+            Case {
+                name: "enforce absent + external",
+                enforce_field: "",
+                blocks_field: EXTERNAL_ENTRY,
+                expect_edges: 0,
+            },
+            Case {
+                name: "enforce true + external",
+                enforce_field: r#", "enforce": true"#,
+                blocks_field: EXTERNAL_ENTRY,
+                expect_edges: 0,
+            },
+            Case {
+                name: "enforce false + external",
+                enforce_field: r#", "enforce": false"#,
+                blocks_field: EXTERNAL_ENTRY,
+                expect_edges: 0,
+            },
+        ];
+
+        for case in cases {
+            let json = carryover_fixture(case.enforce_field, case.blocks_field);
+            let path = PathBuf::from("/repos/okf-core/planning/state.json");
+            let file: StateFile = serde_json::from_str(&json).unwrap();
+            let files = vec![(state_source("okf-core", &path), file)];
+
+            let graph = build_state_graph(&files);
+
+            assert_eq!(
+                graph.edges.len(),
+                case.expect_edges,
+                "edge count mismatch for case: {}",
+                case.name
+            );
+
+            if case.expect_edges == 1 {
+                let edge = &graph.edges[0];
+                assert_eq!(edge.from, "okf-core:OK.9.Z", "from mismatch: {}", case.name);
+                assert_eq!(
+                    edge.to_ref, "carryover:okf-core/held-by-this",
+                    "to_ref mismatch: {}",
+                    case.name
+                );
+                assert_eq!(
+                    edge.kind,
+                    StateEdgeKind::CarryoverBlocks,
+                    "kind mismatch: {}",
+                    case.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn build_state_graph_carryover_adds_no_nodes() {
+        // Carryover entries never yield a StateNode — node count with a
+        // carryover present must equal node count for the same file with
+        // `carryover: []`.
+        let with_carryover = carryover_fixture(
+            "",
+            r#"[{"type": "block", "repo": "okf-core", "id": "OK.9.Z", "what": null}]"#,
+        );
+        let without_carryover = r#"{
+            "repo": "okf-core",
+            "kind": "project",
+            "updated": "2026-07-01",
+            "carryover": []
+        }"#
+        .to_string();
+
+        let path = PathBuf::from("/repos/okf-core/planning/state.json");
+
+        let file_with: StateFile = serde_json::from_str(&with_carryover).unwrap();
+        let files_with = vec![(state_source("okf-core", &path), file_with)];
+        let graph_with = build_state_graph(&files_with);
+
+        let file_without: StateFile = serde_json::from_str(&without_carryover).unwrap();
+        let files_without = vec![(state_source("okf-core", &path), file_without)];
+        let graph_without = build_state_graph(&files_without);
+
+        assert_eq!(graph_with.nodes.len(), graph_without.nodes.len());
+        assert_eq!(graph_with.nodes.len(), 0);
+        // The carryover-bearing file still produced its edge, confirming
+        // this isn't a vacuous comparison of two empty graphs.
+        assert_eq!(graph_with.edges.len(), 1);
+    }
+
+    #[test]
+    fn build_state_graph_carryover_does_not_mutate_input() {
+        // Guards the block's stated risk: `blocked` is DERIVED and must
+        // never be written back onto the target's depends_on. Snapshot the
+        // full input StateFile as a serde_json::Value before the call and
+        // assert it is byte-for-byte unchanged after.
+        let json = carryover_fixture(
+            "",
+            r#"[{"type": "block", "repo": "okf-core", "id": "OK.9.Z", "what": null}]"#,
+        );
+        let path = PathBuf::from("/repos/okf-core/planning/state.json");
+        let file: StateFile = serde_json::from_str(&json).unwrap();
+        let files = vec![(state_source("okf-core", &path), file)];
+
+        let before = serde_json::to_value(&files[0].1).unwrap();
+        let _graph = build_state_graph(&files);
+        let after = serde_json::to_value(&files[0].1).unwrap();
+
+        assert_eq!(before, after);
+    }
+
     #[test]
     fn block_shape_fields_roundtrip() {
         let json_with_fields = r#"{
