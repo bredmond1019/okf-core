@@ -10,23 +10,40 @@
 # constructs), invisible from here without actually compiling that
 # consumer's test targets.
 #
-# This script currently implements DISCOVERY only (task 1 of OK.5.A):
-# find every repo registered in brain.toml whose Cargo.toml (root or any
-# workspace member) declares a path dependency that resolves to this
-# okf-core checkout, by walking the dependency tables `dependencies`,
-# `dev-dependencies`, `build-dependencies` and `workspace.dependencies`.
-# No consumer slug is hardcoded — engine-rs, for example, is found only
-# because its root Cargo.toml's [workspace.dependencies] table carries
-# `okf-core = { path = "../okf-core" }`.
+# Discovery (task 1): find every repo registered in brain.toml whose
+# Cargo.toml (root or any workspace member) declares a path dependency that
+# resolves to this okf-core checkout, by walking the dependency tables
+# `dependencies`, `dev-dependencies`, `build-dependencies` and
+# `workspace.dependencies`. No consumer slug is hardcoded — engine-rs, for
+# example, is found only because its root Cargo.toml's
+# [workspace.dependencies] table carries `okf-core = { path = "../okf-core" }`.
 #
-# Classification (compiling each consumer's test targets with
-# `cargo nextest run --no-run --locked`) and waiver handling land in later
-# tasks of this spec; this script does not spawn cargo yet.
+# Run + classify (task 2): for each discovered consumer, compile its TEST
+# targets only (`cargo nextest run --no-run --locked`) — the break class
+# this gate exists to catch (OK.3.B, D58, OK.4.B) lived entirely in
+# test-only code (struct literals, match arms) that a plain `cargo build`
+# never walks. A dirty consumer is skipped without ever spawning cargo: its
+# compile result is not evidence about okf-core either way. Classification
+# reads the stderr SIGNATURE before the exit code, never the reverse — exit
+# 101 has been observed both for a real break and for a stale lock, so the
+# exit code alone cannot distinguish them.
+#
+# Waiver handling (task 3) is not implemented yet: this script currently
+# exits non-zero whenever any consumer classifies broken, unconditionally.
 #
 # Usage:
+#   scripts/check_consumers.sh
+#       Discover, run, classify and print a human report for every
+#       consumer. Exits non-zero iff any consumer classifies broken.
 #   scripts/check_consumers.sh --list
 #       Print the discovered consumer slugs, one per line, and exit 0.
 #       Discovery only — nothing is compiled.
+#   scripts/check_consumers.sh --json
+#       Same run as the default, emitted as compact JSON instead of the
+#       human report. Same exit-code rule.
+#   scripts/check_consumers.sh --consumer <slug>
+#       Run and report on exactly one discovered consumer. An unknown slug
+#       is a hard error naming the valid ones; nothing is compiled.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -209,11 +226,17 @@ repo_is_consumer() {
 # ---------------------------------------------------------------------------
 # Discovery: walk every [[repos]] block, skip the ones that can't be
 # consumers on their face, then test the rest for a path dependency back to
-# okf-core.
+# okf-core. Populates the parallel global arrays CONSUMER_SLUGS and
+# CONSUMER_DIRS (sorted by slug), consumed by every run mode below.
 # ---------------------------------------------------------------------------
-discover_consumers() {
-    local consumers=()
+CONSUMER_SLUGS=()
+CONSUMER_DIRS=()
+
+discover_consumer_records() {
+    CONSUMER_SLUGS=()
+    CONSUMER_DIRS=()
     local slug repo_path repo_dir repo_real
+    local records=()
 
     while IFS=$'\t' read -r slug repo_path; do
         [ -n "$slug" ] || continue
@@ -226,13 +249,267 @@ discover_consumers() {
         [ "$repo_real" != "$OKF_CORE_REAL" ] || continue   # skip okf-core itself
 
         if repo_is_consumer "$repo_real"; then
-            consumers+=("$slug")
+            records+=("$slug"$'\t'"$repo_real")
         fi
     done < <(parse_repos_blocks)
 
-    if [ "${#consumers[@]}" -gt 0 ]; then
-        printf '%s\n' "${consumers[@]}" | sort
+    if [ "${#records[@]}" -gt 0 ]; then
+        while IFS=$'\t' read -r slug repo_real; do
+            CONSUMER_SLUGS+=("$slug")
+            CONSUMER_DIRS+=("$repo_real")
+        done < <(printf '%s\n' "${records[@]}" | sort)
     fi
+}
+
+print_consumer_list() {
+    if [ "${#CONSUMER_SLUGS[@]}" -gt 0 ]; then
+        printf '%s\n' "${CONSUMER_SLUGS[@]}"
+    fi
+}
+
+# Narrow CONSUMER_SLUGS/CONSUMER_DIRS down to exactly the one matching
+# $1, or exit non-zero naming the valid slugs. Must run after discovery.
+select_single_consumer() {
+    local target="$1"
+    local i
+    for i in "${!CONSUMER_SLUGS[@]}"; do
+        if [ "${CONSUMER_SLUGS[$i]}" = "$target" ]; then
+            CONSUMER_SLUGS=("$target")
+            CONSUMER_DIRS=("${CONSUMER_DIRS[$i]}")
+            return 0
+        fi
+    done
+    echo "check_consumers: unknown consumer '$target' (valid: $(printf '%s, ' "${CONSUMER_SLUGS[@]}" | sed -E 's/, $//'))" >&2
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Run + classify: compile one consumer's TEST targets with
+# `cargo nextest run --no-run --locked` and classify the result.
+# ---------------------------------------------------------------------------
+
+# Strip ANSI CSI sequences (e.g. color codes) from stdin, as defence in
+# depth alongside CARGO_TERM_COLOR=never — rustc's `error[E....]` prefix
+# must never be defeated by escape codes wrapped around it.
+strip_ansi() {
+    sed -E $'s/\x1b\\[[0-9;]*[A-Za-z]//g'
+}
+
+# Print a Cargo.lock's sha256 digest, or the literal string "missing" if
+# the file does not exist. "missing" is itself a valid, comparable state.
+hash_lockfile() {
+    local path="$1"
+    if [ -f "$path" ]; then
+        shasum -a 256 "$path" | awk '{print $1}'
+    else
+        printf 'missing'
+    fi
+}
+
+# Read ANSI-stripped rustc stderr on stdin and print one line per
+# `error[E....]` diagnostic: "<CODE> <file:line:col>" when a `--> ` site
+# line follows within the next few lines, or bare "<CODE>" otherwise.
+extract_error_sites() {
+    awk '
+        function flush() {
+            if (code != "") {
+                if (site != "") {
+                    printf "%s %s\n", code, site
+                } else {
+                    printf "%s\n", code
+                }
+            }
+            code = ""; site = ""; lookahead = 0
+        }
+        {
+            if (match($0, /error\[E[0-9]+\]/)) {
+                flush()
+                full = substr($0, RSTART, RLENGTH)
+                match(full, /E[0-9]+/)
+                code = substr(full, RSTART, RLENGTH)
+                lookahead = 5
+                next
+            }
+            if (code != "" && lookahead > 0) {
+                if ($0 ~ /-->/) {
+                    line = $0
+                    sub(/^[ \t]*-->[ \t]*/, "", line)
+                    gsub(/[ \t]+$/, "", line)
+                    site = line
+                    flush()
+                    next
+                }
+                lookahead--
+                if (lookahead == 0) {
+                    flush()
+                }
+            }
+        }
+        END { flush() }
+    '
+}
+
+# Run and classify one consumer. Sets the globals VERDICT (one of pass,
+# broken, lockfile-stale, skipped-dirty, not-evaluable), DETAIL (a reason
+# string; empty for pass/broken) and ERROR_LINES (array of
+# "<CODE> [<site>]" strings; only populated for broken). Never spawns
+# cargo against a dirty tree.
+VERDICT=""
+DETAIL=""
+ERROR_LINES=()
+
+run_and_classify_consumer() {
+    local slug="$1" repo_dir="$2"
+    VERDICT=""
+    DETAIL=""
+    ERROR_LINES=()
+
+    local git_status git_rc=0
+    git_status="$(git -C "$repo_dir" status --porcelain 2>&1)" || git_rc=$?
+    if [ "$git_rc" -ne 0 ]; then
+        VERDICT="not-evaluable"
+        DETAIL="git status failed: $git_status"
+        return 0
+    fi
+    if [ -n "$git_status" ]; then
+        VERDICT="skipped-dirty"
+        DETAIL="working tree has uncommitted changes"
+        return 0
+    fi
+
+    local lockfile="$repo_dir/Cargo.lock"
+    local hash_before hash_after
+    hash_before="$(hash_lockfile "$lockfile")"
+
+    local target_dir stderr_file rc=0
+    target_dir="$(mktemp -d)"
+    stderr_file="$(mktemp)"
+
+    CARGO_TARGET_DIR="$target_dir" CARGO_TERM_COLOR=never \
+        cargo nextest run --no-run --locked --manifest-path "$repo_dir/Cargo.toml" \
+        >/dev/null 2>"$stderr_file" || rc=$?
+
+    local stderr_raw stderr_clean
+    stderr_raw="$(cat "$stderr_file")"
+    rm -f "$stderr_file"
+    rm -rf "$target_dir"
+
+    stderr_clean="$(printf '%s' "$stderr_raw" | strip_ansi)"
+
+    hash_after="$(hash_lockfile "$lockfile")"
+    if [ "$hash_before" != "$hash_after" ]; then
+        VERDICT="not-evaluable"
+        DETAIL="Cargo.lock hash changed ($hash_before -> $hash_after); --locked was dropped or defeated"
+        return 0
+    fi
+
+    if [ "$rc" -eq 0 ]; then
+        VERDICT="pass"
+        return 0
+    fi
+
+    if printf '%s' "$stderr_clean" | grep -q 'cannot update the lock file'; then
+        VERDICT="lockfile-stale"
+        DETAIL="cargo reported: cannot update the lock file (exit $rc)"
+        return 0
+    fi
+
+    if printf '%s' "$stderr_clean" | grep -Eq 'error\[E[0-9]+\]'; then
+        VERDICT="broken"
+        local line
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            ERROR_LINES+=("$line")
+        done < <(printf '%s' "$stderr_clean" | extract_error_sites)
+        return 0
+    fi
+
+    VERDICT="not-evaluable"
+    DETAIL="unrecognized failure (exit $rc)"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Report rendering: human text and compact JSON, both over CONSUMER_SLUGS.
+# Both append every observed verdict to RESULT_VERDICTS so the caller can
+# decide the exit code.
+# ---------------------------------------------------------------------------
+RESULT_VERDICTS=()
+
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    printf '%s' "$s"
+}
+
+print_report() {
+    local i slug dir eline
+    for i in "${!CONSUMER_SLUGS[@]}"; do
+        slug="${CONSUMER_SLUGS[$i]}"
+        dir="${CONSUMER_DIRS[$i]}"
+        run_and_classify_consumer "$slug" "$dir"
+        echo "== $slug: $VERDICT =="
+        if [ "$VERDICT" = "broken" ]; then
+            for eline in "${ERROR_LINES[@]}"; do
+                echo "  $eline"
+            done
+        elif [ -n "$DETAIL" ]; then
+            echo "  $DETAIL"
+        fi
+        RESULT_VERDICTS+=("$VERDICT")
+    done
+}
+
+print_json() {
+    local i slug dir first=1 efirst eline code site
+    printf '['
+    for i in "${!CONSUMER_SLUGS[@]}"; do
+        slug="${CONSUMER_SLUGS[$i]}"
+        dir="${CONSUMER_DIRS[$i]}"
+        run_and_classify_consumer "$slug" "$dir"
+        [ "$first" -eq 1 ] || printf ','
+        first=0
+        printf '{"slug":"%s","verdict":"%s"' "$(json_escape "$slug")" "$(json_escape "$VERDICT")"
+        if [ -n "$DETAIL" ]; then
+            printf ',"detail":"%s"' "$(json_escape "$DETAIL")"
+        fi
+        if [ "${#ERROR_LINES[@]}" -gt 0 ]; then
+            printf ',"errors":['
+            efirst=1
+            for eline in "${ERROR_LINES[@]}"; do
+                [ "$efirst" -eq 1 ] || printf ','
+                efirst=0
+                code="${eline%% *}"
+                if [ "$eline" = "$code" ]; then
+                    site=""
+                else
+                    site="${eline#* }"
+                fi
+                if [ -n "$site" ]; then
+                    printf '{"code":"%s","site":"%s"}' "$(json_escape "$code")" "$(json_escape "$site")"
+                else
+                    printf '{"code":"%s"}' "$(json_escape "$code")"
+                fi
+            done
+            printf ']'
+        fi
+        printf '}'
+        RESULT_VERDICTS+=("$VERDICT")
+    done
+    printf ']\n'
+}
+
+# Exit non-zero iff any recorded verdict is "broken". Waiver handling
+# (task 3) will replace this rule with the full stale-waiver-aware one.
+exit_for_verdicts() {
+    local v
+    for v in "${RESULT_VERDICTS[@]}"; do
+        if [ "$v" = "broken" ]; then
+            exit 1
+        fi
+    done
+    exit 0
 }
 
 # ---------------------------------------------------------------------------
@@ -240,22 +517,45 @@ discover_consumers() {
 # ---------------------------------------------------------------------------
 usage() {
     cat <<'EOF'
-Usage: check_consumers.sh --list
+Usage: check_consumers.sh [--list | --json | --consumer <slug>]
 
-  --list    Print the discovered consumer slugs, one per line, and exit 0.
-            Discovery only; nothing is compiled.
+  (no args)          Discover, run, classify and report on every consumer.
+                      Exits non-zero iff any consumer classifies broken.
+  --list             Print the discovered consumer slugs, one per line,
+                      and exit 0. Discovery only; nothing is compiled.
+  --json             Same run as (no args), emitted as compact JSON.
+  --consumer <slug>  Run and report on exactly one discovered consumer.
+                      An unknown slug is a hard error naming the valid ones.
 EOF
 }
 
 main() {
+    discover_consumer_records
+
     if [ "$#" -eq 0 ]; then
-        usage >&2
-        exit 1
+        RESULT_VERDICTS=()
+        print_report
+        exit_for_verdicts
     fi
 
     case "$1" in
         --list)
-            discover_consumers
+            print_consumer_list
+            ;;
+        --json)
+            RESULT_VERDICTS=()
+            print_json
+            exit_for_verdicts
+            ;;
+        --consumer)
+            if [ -z "${2:-}" ]; then
+                echo "check_consumers: --consumer requires a slug argument" >&2
+                exit 1
+            fi
+            select_single_consumer "$2"
+            RESULT_VERDICTS=()
+            print_report
+            exit_for_verdicts
             ;;
         -h|--help)
             usage
