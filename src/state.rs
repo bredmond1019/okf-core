@@ -106,6 +106,39 @@ pub struct ApprovalDep {
     pub digest: String,
 }
 
+impl OperatorDep {
+    /// D76 display identity for this edge's slug — see [`op_id`].
+    pub fn op_id(&self) -> String {
+        op_id(&self.slug)
+    }
+
+    /// Whether this edge's slug carries a redundant `operator-` prefix —
+    /// see [`op_slug_stutters`]. Delegates rather than reimplementing the
+    /// rule: two implementations of one predicate is exactly the drift this
+    /// ticket exists to prevent.
+    pub fn slug_stutters(&self) -> bool {
+        op_slug_stutters(&self.slug)
+    }
+}
+
+impl ApprovalDep {
+    /// D76 display identity for this edge's slug — see [`op_id`].
+    ///
+    /// `ApprovalDep` gets this only because it shares the slug shape with
+    /// `OperatorDep` (D76); its `digest` binding is untouched by this
+    /// ticket.
+    pub fn op_id(&self) -> String {
+        op_id(&self.slug)
+    }
+
+    /// Whether this edge's slug carries a redundant `operator-` prefix —
+    /// see [`op_slug_stutters`]. Delegates rather than reimplementing the
+    /// rule, for the same reason as [`OperatorDep::slug_stutters`].
+    pub fn slug_stutters(&self) -> bool {
+        op_slug_stutters(&self.slug)
+    }
+}
+
 /// Diagnostic code for a `slug` that carries a redundant `operator-` prefix
 /// (see [`op_slug_stutters`]). Exported as a `const` so okf-core and mev
 /// share one literal instead of two independently-typed strings that could
