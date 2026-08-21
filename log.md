@@ -12,6 +12,42 @@ timestamp: "2026-08-17T11:53:07-03:00"
 
 # Log
 
+## [2026-08-21]
+
+### OK.4.A closed — CarryoverArchiveRow, DisposalReason, AmendsRef
+- **What:** Implemented and closed `OK.4.A` via `/sdlc-flow` (7/7 tasks, PASS). Added
+  `CarryoverArchiveRow` to `src/state.rs` — the disposed `Carryover` entry embedded verbatim via
+  `#[serde(flatten)]` (its own flattened `extra` map included), plus `disposed_at`,
+  `reason: DisposalReason` (a closed four-variant enum — `cleared`/`superseded`/`promoted`/
+  `withdrawn` — with no `#[serde(other)]` fallback, deliberately unlike `CarryoverKind`'s `Unknown`
+  fallback), `reconstructed: bool` (default false), `evidence: Option<String>`, and
+  `amends: Option<AmendsRef>` naming the earlier row a correction supersedes. All three types
+  re-exported from the crate root in alphabetical order. Tests assert directly on `row.entry.extra`
+  rather than relying on Value-equality round-trips alone, proving archive-level fields are never
+  swallowed into the embedded entry's flatten map; both shown-failing controls (deleted `withdrawn`
+  variant; `disposed_at` genuinely absent anywhere in the row) were actually executed and their real
+  observed output recorded. `tests/schema_conformance.rs` and `tests/state_preservation.rs` are
+  unmodified. Task 7 confirmed fmt, clippy `--all-targets -D warnings`, `cargo test` (all suites),
+  release build, and the typeshare-feature release build all pass.
+- **Why:** Today there is no outflow path for a carryover entry — the only way to retire one is to
+  delete it, destroying the record of what was found and why it stopped mattering. The archive is
+  append-only, so `amends` had to land in this same block rather than a follow-up: a wrong row is
+  permanent unless the correction mechanism exists before the first writer.
+- **Refs:** `planning/OK.4.A/tasks.md`. This is the head of the Wave 3 serial critical path
+  (OK.4.A -> OK.4.B -> bastion BA.23.A -> mev MV.16.*); nothing in Wave 3 parallelises around it.
+  Next: `OK.4.B` — derive gating edges from `carryover[].blocks`.
+- **Commits:**
+  ```
+  ebc7e62 docs: update docs for OK.4.A
+  58b4917 feat: implement OK.4.A-task6
+  4acfec6 feat: implement OK.4.A-task5
+  be5a8de feat: implement OK.4.A-task4
+  46795ed feat: implement OK.4.A-task3
+  3c56909 feat: implement OK.4.A-task2
+  e972abb feat: implement OK.4.A-task1
+  5a0abf7 chore: init worktree OK.4.A-flow
+  ```
+
 ## [2026-08-17]
 
 ### block-vocab-extension closed; close-out's base_sha fallback proven end-to-end

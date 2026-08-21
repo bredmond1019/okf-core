@@ -833,6 +833,95 @@ pub struct Carryover {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+/// Why a carryover entry left `state.json` — the closed vocabulary for
+/// [`CarryoverArchiveRow::reason`].
+///
+/// Deliberately the mirror image of [`CarryoverKind`]: `CarryoverKind`
+/// degrades an unrecognized value to `Unknown(String)` because a carryover
+/// with a strange `kind` is a live entry someone can fix in place later.
+/// `DisposalReason` has NO such fallback and NO `#[serde(other)]` — the
+/// archive this feeds is append-only (`planning/carryover-archive.jsonl`),
+/// so a mistyped reason is not a fixable live value, it is a permanent line
+/// in a file nothing ever edits. Rejecting an unknown reason at parse time,
+/// loudly, is cheaper than a wrong row that outlives the mistake.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+pub enum DisposalReason {
+    /// The condition that made this entry matter is gone.
+    Cleared,
+    /// A newer entry replaces this one; see `amends` on the newer row.
+    Superseded,
+    /// The entry graduated into a tracked block, session, or reference.
+    Promoted,
+    /// Retired without being resolved (e.g. reclassified, judged out of scope).
+    Withdrawn,
+}
+
+/// Names the earlier archive row that a `superseded` disposal corrects.
+///
+/// A typed `{slug, disposed_at}` pair, not a composite string key, because
+/// the archive it lives in (`planning/carryover-archive.jsonl`) is
+/// append-only: a malformed composite key (wrong delimiter, missing part,
+/// ambiguous separator inside a slug) would itself be a permanent line, and
+/// reading it back would need a parser and a grammar in mev just to recover
+/// two facts that already have their own JSON fields. Two plain, required
+/// fields need neither — the format has no room to be malformed.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+pub struct AmendsRef {
+    /// Stable slug of the row being corrected.
+    pub slug: String,
+    /// `disposed_at` of the row being corrected, so the pair uniquely
+    /// identifies one line even if the same slug was disposed more than once.
+    pub disposed_at: String,
+}
+
+/// A disposed carryover entry, embedded verbatim, plus why it left
+/// `state.json` — one line of the append-only
+/// `planning/carryover-archive.jsonl` (okf-core writes and reads none of
+/// that file; it defines the shape only).
+///
+/// **Nested-flatten hazard:** `entry` flattens [`Carryover`] into this
+/// struct's own JSON object, and `Carryover` itself ends in
+/// `#[serde(flatten, default)] extra: serde_json::Map<..>` — a catch-all for
+/// anything Carryover doesn't model. That means this struct has a flatten
+/// nested over a catch-all flatten: `disposed_at`, `reason`, `reconstructed`,
+/// `evidence`, and `amends` sit in the same flattened JSON object as every
+/// field `Carryover` knows about *and* everything `Carryover` doesn't. The
+/// invariant that must hold: those five archive-level keys belong to
+/// `CarryoverArchiveRow` and must never be relocated into
+/// `entry.extra` — if they were, a naive round-trip test (serialize,
+/// deserialize, compare `serde_json::Value`s) would still pass, because the
+/// flattened JSON text is identical either way; only an assertion on the
+/// parsed *structure* (`row.entry.extra` must not contain these five keys)
+/// can catch the relocation. See the tests added alongside this struct.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+pub struct CarryoverArchiveRow {
+    /// The disposed entry, embedded verbatim — including its own
+    /// unmodeled `extra` map. Unchanged by this block.
+    #[serde(flatten)]
+    pub entry: Carryover,
+    /// Date the entry was disposed (`YYYY-MM-DD` or full RFC3339).
+    pub disposed_at: String,
+    /// Closed four-value vocabulary; see [`DisposalReason`].
+    pub reason: DisposalReason,
+    /// Whether this row was backfilled from history rather than written at
+    /// disposal time (e.g. the one-time git backfill of previously deleted
+    /// entries). Defaults to `false` when the key is absent.
+    #[serde(default)]
+    pub reconstructed: bool,
+    /// Optional free-text pointer to why this entry was disposed (a commit,
+    /// a PR, a decision doc). Omitted from output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+    /// Set when `reason` is `superseded`: names the earlier row this row
+    /// corrects. See [`AmendsRef`]. Omitted from output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amends: Option<AmendsRef>,
+}
+
 /// A permanently-true reference entry: a trap, measured design invariant,
 /// distilled lesson, or deliberate-choice marker that can never be "done".
 ///
@@ -2248,5 +2337,265 @@ mod tests {
             matches!(&deps[0], BlockedBy::Operator(op) if op.slug == "operator-mac-mini-visit")
         );
         assert!(matches!(&deps[1], BlockedBy::Approval(ap) if ap.slug == "approve-devto-sweep"));
+    }
+
+    // --- CarryoverArchiveRow: nested-flatten structural tests (OK.4.A task 5) ---
+    //
+    // `CarryoverArchiveRow` flattens `Carryover`, and `Carryover` itself ends
+    // in a catch-all `#[serde(flatten, default)] extra` map. That means the
+    // five archive-level fields (`disposed_at`, `reason`, `reconstructed`,
+    // `evidence`, `amends`) sit in the SAME flattened JSON object as every
+    // field `Carryover` models *and* everything it doesn't. If serde ever
+    // relocated one of those five keys into `entry.extra` instead of binding
+    // it to the outer struct's own field, a plain "serialize, deserialize,
+    // compare `serde_json::Value`s" round-trip test would still pass — the
+    // flattened JSON text is byte-identical either way, because both worlds
+    // produce the same flat object; only the top-level struct is different.
+    // So this test suite adds a second assertion on top of the Value
+    // round-trip: it inspects the *parsed structure*, specifically
+    // `row.entry.extra`, and asserts directly that none of the five
+    // archive-level keys ended up there, and that an unmodeled key which
+    // genuinely belongs to `Carryover` (e.g. "legacy_field") DID land there.
+    // That is the only check that can actually catch a relocation bug.
+
+    /// A full archive line: every `CarryoverArchiveRow` field populated,
+    /// every `Carryover` field populated, one unmodeled entry-level key
+    /// ("legacy_field") that belongs in `entry.extra`, and all five
+    /// archive-level keys — which must NOT end up there.
+    fn full_archive_row_fixture() -> &'static str {
+        r#"{
+            "slug": "carryover-old-hazard",
+            "scope": { "repo": "okf-core", "tier": null, "cross_repo": null },
+            "kind": "defect",
+            "text": "stale grep pattern in the old validator",
+            "related": [],
+            "priority": 2,
+            "finding_id": "F-old-hazard",
+            "clears_when": null,
+            "created": "2026-01-01",
+            "reviewed": "2026-02-01",
+            "legacy_field": "some pre-schema value",
+            "disposed_at": "2026-08-21",
+            "reason": "cleared",
+            "reconstructed": false,
+            "evidence": "commit abc1234",
+            "amends": {
+                "slug": "carryover-superseded-row",
+                "disposed_at": "2026-07-01"
+            }
+        }"#
+    }
+
+    #[test]
+    fn carryover_archive_row_value_round_trip() {
+        let json = full_archive_row_fixture();
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&row).unwrap();
+        // (a) Value-equality round-trip. Necessary, but — per the module
+        // comment above — NOT sufficient to catch a relocation of the
+        // archive-level keys into `entry.extra`: that bug leaves this
+        // exact assertion green. See the structural test below.
+        assert_eq!(original, round);
+    }
+
+    #[test]
+    fn carryover_archive_row_keeps_archive_keys_out_of_entry_extra() {
+        let json = full_archive_row_fixture();
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+
+        // (b) The structural assertion: none of the five archive-level keys
+        // may appear in `entry.extra`. This is the check that actually
+        // catches a relocation bug — the Value round-trip above cannot.
+        for key in [
+            "disposed_at",
+            "reason",
+            "reconstructed",
+            "evidence",
+            "amends",
+        ] {
+            assert!(
+                !row.entry.extra.contains_key(key),
+                "archive-level key {key:?} leaked into entry.extra"
+            );
+        }
+
+        // An unmodeled key that genuinely belongs to the entry DOES land in
+        // `entry.extra` and survives the round-trip.
+        assert_eq!(
+            row.entry.extra.get("legacy_field"),
+            Some(&serde_json::Value::String(
+                "some pre-schema value".to_string()
+            ))
+        );
+
+        // And the archive-level fields bound correctly to the outer struct.
+        assert_eq!(row.disposed_at, "2026-08-21");
+        assert_eq!(row.reason, DisposalReason::Cleared);
+        assert!(!row.reconstructed);
+        assert_eq!(row.evidence.as_deref(), Some("commit abc1234"));
+        assert_eq!(
+            row.amends,
+            Some(AmendsRef {
+                slug: "carryover-superseded-row".to_string(),
+                disposed_at: "2026-07-01".to_string(),
+            })
+        );
+        assert_eq!(row.entry.slug, "carryover-old-hazard");
+    }
+
+    #[test]
+    fn carryover_archive_row_reconstructed_defaults_false_and_optionals_omit() {
+        // (c) `reconstructed` absent parses as false; absent `evidence` and
+        // `amends` are omitted from the serialized output entirely (not
+        // emitted as `null`), per `skip_serializing_if`.
+        let json = r#"{
+            "slug": "carryover-minimal",
+            "scope": { "repo": "okf-core", "tier": null, "cross_repo": null },
+            "kind": "defect",
+            "text": "minimal disposal",
+            "created": "2026-08-21",
+            "disposed_at": "2026-08-21",
+            "reason": "promoted"
+        }"#;
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+        assert!(!row.reconstructed);
+        assert_eq!(row.evidence, None);
+        assert_eq!(row.amends, None);
+
+        let value = serde_json::to_value(&row).unwrap();
+        let obj = value.as_object().unwrap();
+        assert!(
+            !obj.contains_key("evidence"),
+            "absent evidence must not serialize, even as null"
+        );
+        assert!(
+            !obj.contains_key("amends"),
+            "absent amends must not serialize, even as null"
+        );
+        // `reconstructed` has no skip_serializing_if, so it always emits.
+        assert_eq!(
+            obj.get("reconstructed"),
+            Some(&serde_json::Value::Bool(false))
+        );
+    }
+
+    // --- DisposalReason vocabulary + AmendsRef tests (OK.4.A task 6) ---
+    //
+    // Both shown-failing controls named in the block's testing_strategy were
+    // executed by hand against this test suite, not merely written:
+    //
+    // Control 1 — delete the `Withdrawn` variant from `DisposalReason`:
+    //   `cargo test --lib carryover_archive_row_disposal_reason_covers_all_four_values`
+    //   went red at COMPILE time, not at assertion time:
+    //     error[E0599]: no variant or associated item named `Withdrawn` found
+    //     for enum `state::DisposalReason` in the current scope
+    //   i.e. this test names all four variants directly in Rust
+    //   (`DisposalReason::Withdrawn`), so removing one is caught before the
+    //   suite can even run — a stronger signal than a red assertion. Variant
+    //   restored, suite green again (verified: 6 passed).
+    //
+    // Control 2 — reproduce the actual relocation hazard: remove
+    // `CarryoverArchiveRow::disposed_at` (the outer struct's own field)
+    // without adding a replacement anywhere, so the `"disposed_at"` JSON key
+    // has nowhere to bind except `Carryover`'s catch-all
+    // `#[serde(flatten, default)] extra` map:
+    //   `carryover_archive_row_keeps_archive_keys_out_of_entry_extra` went
+    //   red at RUNTIME with:
+    //     thread '...' panicked at src/state.rs:2425:13:
+    //     archive-level key "disposed_at" leaked into entry.extra
+    //   confirming the structural assertion (and only the structural
+    //   assertion — the Value round-trip test still passes in this world,
+    //   exactly as predicted) catches the relocation. Note: transplanting
+    //   `disposed_at` onto `Carryover` as a genuinely *modeled* field
+    //   (rather than deleting it outright) does NOT reproduce this failure —
+    //   a modeled field binds cleanly and never touches `extra` either way;
+    //   only the unmodeled-on-both-sides case relocates into `extra`. Field
+    //   restored to `CarryoverArchiveRow`, suite green again (verified: 6
+    //   passed).
+
+    #[test]
+    fn carryover_archive_row_disposal_reason_covers_all_four_values() {
+        let cases = [
+            ("cleared", DisposalReason::Cleared),
+            ("superseded", DisposalReason::Superseded),
+            ("promoted", DisposalReason::Promoted),
+            ("withdrawn", DisposalReason::Withdrawn),
+        ];
+        for (name, expected) in cases {
+            let json = format!(
+                r#"{{
+                    "slug": "carryover-reason-check",
+                    "scope": {{ "repo": "okf-core", "tier": null, "cross_repo": null }},
+                    "kind": "defect",
+                    "text": "reason vocabulary check",
+                    "created": "2026-08-21",
+                    "disposed_at": "2026-08-21",
+                    "reason": "{name}"
+                }}"#
+            );
+            let row: CarryoverArchiveRow = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                row.reason, expected,
+                "reason value {name:?} did not map to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn carryover_archive_row_unknown_reason_is_a_hard_parse_error() {
+        // A fifth value ("deleted") is not in the closed vocabulary and must
+        // be rejected at parse time — no `#[serde(other)]` fallback exists
+        // on `DisposalReason`, in deliberate contrast to `CarryoverKind`.
+        let json = r#"{
+            "slug": "carryover-bad-reason",
+            "scope": { "repo": "okf-core", "tier": null, "cross_repo": null },
+            "kind": "defect",
+            "text": "unknown reason must not parse",
+            "created": "2026-08-21",
+            "disposed_at": "2026-08-21",
+            "reason": "deleted"
+        }"#;
+        let result: Result<CarryoverArchiveRow, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "an unknown DisposalReason value must be a hard parse error, not a fallback"
+        );
+    }
+
+    #[test]
+    fn carryover_archive_row_amends_round_trips_slug_and_disposed_at() {
+        // A `superseded` row with `amends` set names the earlier row it
+        // corrects by both `slug` and `disposed_at`; both fields must
+        // survive the round-trip.
+        let json = r#"{
+            "slug": "carryover-corrected-row",
+            "scope": { "repo": "okf-core", "tier": null, "cross_repo": null },
+            "kind": "deferred",
+            "text": "corrects an earlier misclassified row",
+            "created": "2026-08-21",
+            "disposed_at": "2026-08-21",
+            "reason": "superseded",
+            "amends": {
+                "slug": "carryover-prior-row",
+                "disposed_at": "2026-08-01"
+            }
+        }"#;
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+        assert_eq!(row.reason, DisposalReason::Superseded);
+        let amends = row.amends.clone().expect("amends must be present");
+        assert_eq!(amends.slug, "carryover-prior-row");
+        assert_eq!(amends.disposed_at, "2026-08-01");
+
+        let round: serde_json::Value = serde_json::to_value(&row).unwrap();
+        let amends_value = round.get("amends").expect("amends must serialize");
+        assert_eq!(
+            amends_value.get("slug").and_then(|v| v.as_str()),
+            Some("carryover-prior-row")
+        );
+        assert_eq!(
+            amends_value.get("disposed_at").and_then(|v| v.as_str()),
+            Some("2026-08-01")
+        );
     }
 }
