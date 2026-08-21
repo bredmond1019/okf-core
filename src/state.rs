@@ -884,6 +884,54 @@ pub struct AmendsRef {
     pub disposed_at: String,
 }
 
+/// A disposed carryover entry, embedded verbatim, plus why it left
+/// `state.json` — one line of the append-only
+/// `planning/carryover-archive.jsonl` (okf-core writes and reads none of
+/// that file; it defines the shape only).
+///
+/// **Nested-flatten hazard:** `entry` flattens [`Carryover`] into this
+/// struct's own JSON object, and `Carryover` itself ends in
+/// `#[serde(flatten, default)] extra: serde_json::Map<..>` — a catch-all for
+/// anything Carryover doesn't model. That means this struct has a flatten
+/// nested over a catch-all flatten: `disposed_at`, `reason`, `reconstructed`,
+/// `evidence`, and `amends` sit in the same flattened JSON object as every
+/// field `Carryover` knows about *and* everything `Carryover` doesn't. The
+/// invariant that must hold: those five archive-level keys belong to
+/// `CarryoverArchiveRow` and must never be relocated into
+/// `entry.extra` — if they were, a naive round-trip test (serialize,
+/// deserialize, compare `serde_json::Value`s) would still pass, because the
+/// flattened JSON text is identical either way; only an assertion on the
+/// parsed *structure* (`row.entry.extra` must not contain these five keys)
+/// can catch the relocation. See the tests added alongside this struct.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+// Not yet referenced outside its own tests: the crate-root re-export lands
+// in the next task of this same block (OK.4.A task 4).
+#[allow(dead_code)]
+pub struct CarryoverArchiveRow {
+    /// The disposed entry, embedded verbatim — including its own
+    /// unmodeled `extra` map. Unchanged by this block.
+    #[serde(flatten)]
+    pub entry: Carryover,
+    /// Date the entry was disposed (`YYYY-MM-DD` or full RFC3339).
+    pub disposed_at: String,
+    /// Closed four-value vocabulary; see [`DisposalReason`].
+    pub reason: DisposalReason,
+    /// Whether this row was backfilled from history rather than written at
+    /// disposal time (e.g. the one-time git backfill of previously deleted
+    /// entries). Defaults to `false` when the key is absent.
+    #[serde(default)]
+    pub reconstructed: bool,
+    /// Optional free-text pointer to why this entry was disposed (a commit,
+    /// a PR, a decision doc). Omitted from output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+    /// Set when `reason` is `superseded`: names the earlier row this row
+    /// corrects. See [`AmendsRef`]. Omitted from output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amends: Option<AmendsRef>,
+}
+
 /// A permanently-true reference entry: a trap, measured design invariant,
 /// distilled lesson, or deliberate-choice marker that can never be "done".
 ///
