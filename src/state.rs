@@ -2348,4 +2348,145 @@ mod tests {
         );
         assert!(matches!(&deps[1], BlockedBy::Approval(ap) if ap.slug == "approve-devto-sweep"));
     }
+
+    // --- CarryoverArchiveRow: nested-flatten structural tests (OK.4.A task 5) ---
+    //
+    // `CarryoverArchiveRow` flattens `Carryover`, and `Carryover` itself ends
+    // in a catch-all `#[serde(flatten, default)] extra` map. That means the
+    // five archive-level fields (`disposed_at`, `reason`, `reconstructed`,
+    // `evidence`, `amends`) sit in the SAME flattened JSON object as every
+    // field `Carryover` models *and* everything it doesn't. If serde ever
+    // relocated one of those five keys into `entry.extra` instead of binding
+    // it to the outer struct's own field, a plain "serialize, deserialize,
+    // compare `serde_json::Value`s" round-trip test would still pass — the
+    // flattened JSON text is byte-identical either way, because both worlds
+    // produce the same flat object; only the top-level struct is different.
+    // So this test suite adds a second assertion on top of the Value
+    // round-trip: it inspects the *parsed structure*, specifically
+    // `row.entry.extra`, and asserts directly that none of the five
+    // archive-level keys ended up there, and that an unmodeled key which
+    // genuinely belongs to `Carryover` (e.g. "legacy_field") DID land there.
+    // That is the only check that can actually catch a relocation bug.
+
+    /// A full archive line: every `CarryoverArchiveRow` field populated,
+    /// every `Carryover` field populated, one unmodeled entry-level key
+    /// ("legacy_field") that belongs in `entry.extra`, and all five
+    /// archive-level keys — which must NOT end up there.
+    fn full_archive_row_fixture() -> &'static str {
+        r#"{
+            "slug": "carryover-old-hazard",
+            "scope": { "repo": "okf-core", "tier": null, "cross_repo": null },
+            "kind": "defect",
+            "text": "stale grep pattern in the old validator",
+            "related": [],
+            "priority": 2,
+            "finding_id": "F-old-hazard",
+            "clears_when": null,
+            "created": "2026-01-01",
+            "reviewed": "2026-02-01",
+            "legacy_field": "some pre-schema value",
+            "disposed_at": "2026-08-21",
+            "reason": "cleared",
+            "reconstructed": false,
+            "evidence": "commit abc1234",
+            "amends": {
+                "slug": "carryover-superseded-row",
+                "disposed_at": "2026-07-01"
+            }
+        }"#
+    }
+
+    #[test]
+    fn carryover_archive_row_value_round_trip() {
+        let json = full_archive_row_fixture();
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&row).unwrap();
+        // (a) Value-equality round-trip. Necessary, but — per the module
+        // comment above — NOT sufficient to catch a relocation of the
+        // archive-level keys into `entry.extra`: that bug leaves this
+        // exact assertion green. See the structural test below.
+        assert_eq!(original, round);
+    }
+
+    #[test]
+    fn carryover_archive_row_keeps_archive_keys_out_of_entry_extra() {
+        let json = full_archive_row_fixture();
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+
+        // (b) The structural assertion: none of the five archive-level keys
+        // may appear in `entry.extra`. This is the check that actually
+        // catches a relocation bug — the Value round-trip above cannot.
+        for key in [
+            "disposed_at",
+            "reason",
+            "reconstructed",
+            "evidence",
+            "amends",
+        ] {
+            assert!(
+                !row.entry.extra.contains_key(key),
+                "archive-level key {key:?} leaked into entry.extra"
+            );
+        }
+
+        // An unmodeled key that genuinely belongs to the entry DOES land in
+        // `entry.extra` and survives the round-trip.
+        assert_eq!(
+            row.entry.extra.get("legacy_field"),
+            Some(&serde_json::Value::String(
+                "some pre-schema value".to_string()
+            ))
+        );
+
+        // And the archive-level fields bound correctly to the outer struct.
+        assert_eq!(row.disposed_at, "2026-08-21");
+        assert_eq!(row.reason, DisposalReason::Cleared);
+        assert!(!row.reconstructed);
+        assert_eq!(row.evidence.as_deref(), Some("commit abc1234"));
+        assert_eq!(
+            row.amends,
+            Some(AmendsRef {
+                slug: "carryover-superseded-row".to_string(),
+                disposed_at: "2026-07-01".to_string(),
+            })
+        );
+        assert_eq!(row.entry.slug, "carryover-old-hazard");
+    }
+
+    #[test]
+    fn carryover_archive_row_reconstructed_defaults_false_and_optionals_omit() {
+        // (c) `reconstructed` absent parses as false; absent `evidence` and
+        // `amends` are omitted from the serialized output entirely (not
+        // emitted as `null`), per `skip_serializing_if`.
+        let json = r#"{
+            "slug": "carryover-minimal",
+            "scope": { "repo": "okf-core", "tier": null, "cross_repo": null },
+            "kind": "defect",
+            "text": "minimal disposal",
+            "created": "2026-08-21",
+            "disposed_at": "2026-08-21",
+            "reason": "promoted"
+        }"#;
+        let row: CarryoverArchiveRow = serde_json::from_str(json).unwrap();
+        assert!(!row.reconstructed);
+        assert_eq!(row.evidence, None);
+        assert_eq!(row.amends, None);
+
+        let value = serde_json::to_value(&row).unwrap();
+        let obj = value.as_object().unwrap();
+        assert!(
+            !obj.contains_key("evidence"),
+            "absent evidence must not serialize, even as null"
+        );
+        assert!(
+            !obj.contains_key("amends"),
+            "absent amends must not serialize, even as null"
+        );
+        // `reconstructed` has no skip_serializing_if, so it always emits.
+        assert_eq!(
+            obj.get("reconstructed"),
+            Some(&serde_json::Value::Bool(false))
+        );
+    }
 }
