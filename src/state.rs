@@ -862,6 +862,28 @@ pub enum DisposalReason {
     Withdrawn,
 }
 
+/// Names the earlier archive row that a `superseded` disposal corrects.
+///
+/// A typed `{slug, disposed_at}` pair, not a composite string key, because
+/// the archive it lives in (`planning/carryover-archive.jsonl`) is
+/// append-only: a malformed composite key (wrong delimiter, missing part,
+/// ambiguous separator inside a slug) would itself be a permanent line, and
+/// reading it back would need a parser and a grammar in mev just to recover
+/// two facts that already have their own JSON fields. Two plain, required
+/// fields need neither — the format has no room to be malformed.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+// Not yet referenced: `CarryoverArchiveRow::amends` and the crate-root
+// re-export land in the next two tasks of this same block (OK.4.A tasks 3-4).
+#[allow(dead_code)]
+pub struct AmendsRef {
+    /// Stable slug of the row being corrected.
+    pub slug: String,
+    /// `disposed_at` of the row being corrected, so the pair uniquely
+    /// identifies one line even if the same slug was disposed more than once.
+    pub disposed_at: String,
+}
+
 /// A permanently-true reference entry: a trap, measured design invariant,
 /// distilled lesson, or deliberate-choice marker that can never be "done".
 ///
