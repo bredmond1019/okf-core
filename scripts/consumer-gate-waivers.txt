@@ -1,0 +1,19 @@
+# consumer-gate-waivers.txt
+#
+# Waives a known-broken consumer so scripts/check_consumers.sh stays
+# pushable while the fix lives in another lane's repo. Format: one row per
+# waived consumer —
+#
+#   <slug> | <owning-block-id> | <reason>
+#
+# `#` comments and blank lines are ignored. Two rules govern this file:
+#
+#   1. All three fields are mandatory. A row missing any of them is a hard
+#      error naming the offending line number — a waiver with no owning
+#      block is how debt becomes permanent.
+#   2. A waived consumer that goes back to `pass` makes the WAIVER ITSELF
+#      fail the gate, as a stale waiver. Once the owning block lands and
+#      the consumer is confirmed passing again, delete this row — do not
+#      leave it "just in case".
+
+mev | unowned-mev-carryoverblocks-arm | core/mev/src/brain/state.rs's exhaustive match on StateEdgeKind has no arm for CarryoverBlocks, added by OK.4.B; mev fails to compile until an owning fix lands

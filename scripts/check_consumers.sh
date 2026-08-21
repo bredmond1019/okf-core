@@ -28,13 +28,20 @@
 # 101 has been observed both for a real break and for a stale lock, so the
 # exit code alone cannot distinguish them.
 #
-# Waiver handling (task 3) is not implemented yet: this script currently
-# exits non-zero whenever any consumer classifies broken, unconditionally.
+# Waiver handling (task 3): scripts/consumer-gate-waivers.txt names a
+# consumer that is knowingly broken so the gate stays green while the fix
+# lives in another lane's repo. A `broken` consumer with a waiver does not
+# fail the gate; a `pass` consumer that STILL has a waiver does — that is
+# what stops a waiver row from outliving the break it was filed for. Every
+# waiver row must carry a slug, an owning block id and a reason; a
+# malformed row or one naming an undiscovered consumer is a hard error.
 #
 # Usage:
 #   scripts/check_consumers.sh
 #       Discover, run, classify and print a human report for every
-#       consumer. Exits non-zero iff any consumer classifies broken.
+#       consumer. Exits non-zero iff a consumer is broken-and-unwaived, or
+#       a waiver is stale (its consumer now passes), or a waiver row is
+#       malformed.
 #   scripts/check_consumers.sh --list
 #       Print the discovered consumer slugs, one per line, and exit 0.
 #       Discovery only — nothing is compiled.
@@ -430,11 +437,132 @@ run_and_classify_consumer() {
 }
 
 # ---------------------------------------------------------------------------
+# Waivers (task 3): scripts/consumer-gate-waivers.txt keeps okf-core
+# pushable while a consumer is knowingly broken, without letting the debt
+# go silently permanent. Format: one row per waived consumer —
+#
+#   <slug> | <owning-block-id> | <reason>
+#
+# `#` comments and blank lines are ignored. All three fields are mandatory:
+# a row missing any of them, or naming a slug that is not a discovered
+# consumer, is a hard error naming the offending line number — a waiver
+# with no owning block is how debt becomes permanent.
+#
+# A `broken` consumer WITH a waiver does not fail the gate (reported as
+# "broken (waived by <block-id>)"). A consumer that is `pass` but STILL HAS
+# a waiver FAILS the gate as a stale waiver — that is the property that
+# stops the waiver file from outliving the break it was filed for.
+# lockfile-stale, skipped-dirty and not-evaluable never fail the gate
+# either way; none of them is evidence that okf-core broke anything.
+# ---------------------------------------------------------------------------
+WAIVER_FILE="$SCRIPT_DIR/consumer-gate-waivers.txt"
+WAIVER_SLUGS=()
+WAIVER_BLOCKS=()
+WAIVER_REASONS=()
+
+trim() {
+    printf '%s' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+# Parse and validate WAIVER_FILE into WAIVER_SLUGS/WAIVER_BLOCKS/
+# WAIVER_REASONS. Must run after discover_consumer_records — each waived
+# slug is validated against the full discovered CONSUMER_SLUGS list, not a
+# --consumer-narrowed subset, so the file's validity never depends on which
+# flag it was run with. Exits non-zero on any malformed row or unknown
+# slug, naming WAIVER_FILE and the offending line number.
+parse_waivers() {
+    WAIVER_SLUGS=()
+    WAIVER_BLOCKS=()
+    WAIVER_REASONS=()
+    [ -f "$WAIVER_FILE" ] || return 0
+
+    local lineno=0 rawline trimmed f1 f2 f3 known s
+    while IFS= read -r rawline || [ -n "$rawline" ]; do
+        lineno=$((lineno + 1))
+        trimmed="$(trim "$rawline")"
+        [ -z "$trimmed" ] && continue
+        case "$trimmed" in
+            \#*) continue ;;
+        esac
+
+        IFS='|' read -r f1 f2 f3 <<< "$trimmed"
+        f1="$(trim "${f1:-}")"
+        f2="$(trim "${f2:-}")"
+        f3="$(trim "${f3:-}")"
+
+        if [ -z "$f1" ] || [ -z "$f2" ] || [ -z "$f3" ]; then
+            echo "check_consumers: malformed waiver row at $WAIVER_FILE:$lineno — need 3 fields: slug | owning-block-id | reason" >&2
+            exit 1
+        fi
+
+        known=0
+        for s in "${CONSUMER_SLUGS[@]}"; do
+            if [ "$s" = "$f1" ]; then
+                known=1
+                break
+            fi
+        done
+        if [ "$known" -eq 0 ]; then
+            echo "check_consumers: waiver at $WAIVER_FILE:$lineno names unknown consumer '$f1' (discovered: $(printf '%s, ' "${CONSUMER_SLUGS[@]}" | sed -E 's/, $//'))" >&2
+            exit 1
+        fi
+
+        WAIVER_SLUGS+=("$f1")
+        WAIVER_BLOCKS+=("$f2")
+        WAIVER_REASONS+=("$f3")
+    done < "$WAIVER_FILE"
+}
+
+# Sets WAIVER_OWNER to $1's owning block id and returns 0 if $1 has a
+# waiver row; returns 1 (WAIVER_OWNER cleared) otherwise.
+WAIVER_OWNER=""
+lookup_waiver() {
+    local slug="$1" i
+    WAIVER_OWNER=""
+    for i in "${!WAIVER_SLUGS[@]}"; do
+        if [ "${WAIVER_SLUGS[$i]}" = "$slug" ]; then
+            WAIVER_OWNER="${WAIVER_BLOCKS[$i]}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Decide whether one consumer's (slug, verdict) pair fails the gate. Sets
+# GATE_NOTE to a human-readable suffix (may be empty) and returns 0 when
+# the gate should NOT fail on this consumer, 1 when it should.
+GATE_NOTE=""
+gate_outcome_for() {
+    local slug="$1" verdict="$2"
+    GATE_NOTE=""
+    if lookup_waiver "$slug"; then
+        case "$verdict" in
+            broken)
+                GATE_NOTE="waived by $WAIVER_OWNER"
+                return 0
+                ;;
+            pass)
+                GATE_NOTE="stale waiver (owned by $WAIVER_OWNER) — consumer now passes; delete this waiver row"
+                return 1
+                ;;
+            *)
+                return 0
+                ;;
+        esac
+    fi
+    if [ "$verdict" = "broken" ]; then
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Report rendering: human text and compact JSON, both over CONSUMER_SLUGS.
 # Both append every observed verdict to RESULT_VERDICTS so the caller can
 # decide the exit code.
 # ---------------------------------------------------------------------------
 RESULT_VERDICTS=()
+ANY_GATE_FAILURE=0
 
 json_escape() {
     local s="$1"
@@ -449,7 +577,14 @@ print_report() {
         slug="${CONSUMER_SLUGS[$i]}"
         dir="${CONSUMER_DIRS[$i]}"
         run_and_classify_consumer "$slug" "$dir"
-        echo "== $slug: $VERDICT =="
+        if ! gate_outcome_for "$slug" "$VERDICT"; then
+            ANY_GATE_FAILURE=1
+        fi
+        if [ -n "$GATE_NOTE" ]; then
+            echo "== $slug: $VERDICT ($GATE_NOTE) =="
+        else
+            echo "== $slug: $VERDICT =="
+        fi
         if [ "$VERDICT" = "broken" ]; then
             for eline in "${ERROR_LINES[@]}"; do
                 echo "  $eline"
@@ -462,15 +597,24 @@ print_report() {
 }
 
 print_json() {
-    local i slug dir first=1 efirst eline code site
+    local i slug dir first=1 efirst eline code site gate_fail_json
     printf '['
     for i in "${!CONSUMER_SLUGS[@]}"; do
         slug="${CONSUMER_SLUGS[$i]}"
         dir="${CONSUMER_DIRS[$i]}"
         run_and_classify_consumer "$slug" "$dir"
+        if gate_outcome_for "$slug" "$VERDICT"; then
+            gate_fail_json="false"
+        else
+            gate_fail_json="true"
+            ANY_GATE_FAILURE=1
+        fi
         [ "$first" -eq 1 ] || printf ','
         first=0
-        printf '{"slug":"%s","verdict":"%s"' "$(json_escape "$slug")" "$(json_escape "$VERDICT")"
+        printf '{"slug":"%s","verdict":"%s","gate_fail":%s' "$(json_escape "$slug")" "$(json_escape "$VERDICT")" "$gate_fail_json"
+        if [ -n "$GATE_NOTE" ]; then
+            printf ',"waiver":"%s"' "$(json_escape "$GATE_NOTE")"
+        fi
         if [ -n "$DETAIL" ]; then
             printf ',"detail":"%s"' "$(json_escape "$DETAIL")"
         fi
@@ -500,15 +644,15 @@ print_json() {
     printf ']\n'
 }
 
-# Exit non-zero iff any recorded verdict is "broken". Waiver handling
-# (task 3) will replace this rule with the full stale-waiver-aware one.
+# Exit non-zero iff at least one consumer is broken-and-unwaived, or a
+# waiver is stale (its consumer now passes). ANY_GATE_FAILURE is set by
+# print_report/print_json via gate_outcome_for as each consumer is
+# classified; a malformed or unknown-slug waiver row exits earlier, from
+# parse_waivers itself, before any consumer is even run.
 exit_for_verdicts() {
-    local v
-    for v in "${RESULT_VERDICTS[@]}"; do
-        if [ "$v" = "broken" ]; then
-            exit 1
-        fi
-    done
+    if [ "$ANY_GATE_FAILURE" -eq 1 ]; then
+        exit 1
+    fi
     exit 0
 }
 
@@ -520,7 +664,8 @@ usage() {
 Usage: check_consumers.sh [--list | --json | --consumer <slug>]
 
   (no args)          Discover, run, classify and report on every consumer.
-                      Exits non-zero iff any consumer classifies broken.
+                      Exits non-zero iff a consumer is broken-and-unwaived,
+                      a waiver is stale, or a waiver row is malformed.
   --list             Print the discovered consumer slugs, one per line,
                       and exit 0. Discovery only; nothing is compiled.
   --json             Same run as (no args), emitted as compact JSON.
@@ -531,9 +676,14 @@ EOF
 
 main() {
     discover_consumer_records
+    # Validated against the FULL discovered list, before --consumer (below)
+    # narrows it — a waiver's validity must never depend on which flag the
+    # gate was run with.
+    parse_waivers
 
     if [ "$#" -eq 0 ]; then
         RESULT_VERDICTS=()
+        ANY_GATE_FAILURE=0
         print_report
         exit_for_verdicts
     fi
@@ -544,6 +694,7 @@ main() {
             ;;
         --json)
             RESULT_VERDICTS=()
+            ANY_GATE_FAILURE=0
             print_json
             exit_for_verdicts
             ;;
@@ -554,6 +705,7 @@ main() {
             fi
             select_single_consumer "$2"
             RESULT_VERDICTS=()
+            ANY_GATE_FAILURE=0
             print_report
             exit_for_verdicts
             ;;
