@@ -12,6 +12,37 @@ timestamp: "2026-08-17T11:53:07-03:00"
 
 # Log
 
+## [run: 2026-08-21]
+
+### OK.4.B closed — CarryoverBlocks edges derived from carryover[].blocks
+Implemented across tasks 1-6 via `/sdlc-flow`, PASS. `Carryover` gained `enforce: Option<bool>`
+(`#[serde(default, skip_serializing_if = "Option::is_none")]`, `None == Some(true)`, so the ~200
+live carryover entries stay byte-identical); `StateEdgeKind` gained a `CarryoverBlocks` variant; and
+`build_state_graph` now walks `file.carryover[].blocks[]`, emitting one `CarryoverBlocks` edge per
+`{type:"block"}` entry — `from` is the held block's `repo:id`, `to_ref` is the targetless
+`carryover:<repo>/<slug>` key, mirroring the existing `BlockedBy` direction convention. Entries with
+`enforce: Some(false)` and `blocks[]` entries of the `External` form emit nothing; no `StateNode` is
+created for any carryover. Table-driven tests cover the full (enforce absent|true|false) x (Block|
+External) matrix plus a node-count guard and a snapshot proving `build_state_graph` never mutates its
+input's `depends_on`. A byte-identical round-trip test on a fixture with no `enforce` key anywhere
+pins the churn-free adoption claim; both shown-failing controls (inverted enforce check, dropped
+External guard) were actually executed and confirmed red before being restored. `docs/architecture.md`'s
+state module row now documents `StateEdgeKind` and all three variants (`BlockedBy`, `CrossRepo`,
+`CarryoverBlocks`) with the targetless caveat. fmt, clippy `--all-targets -D warnings`, `cargo test`,
+release build, and the typeshare-feature build all pass. Second block of the Wave 3 serial critical
+path (OK.4.A -> OK.4.B -> bastion BA.23.A -> mev MV.16.*); bastion's `block_graph.rs:128` exhaustive
+match now needs the new variant added, which is exactly what makes `BA.23.A` a fleet-compile gate.
+Next: bastion `BA.23.A`.
+```
+3fdf46d docs: list StateEdgeKind + CarryoverBlocks in the state module row
+fcb9b33 test: churn-free enforce round-trip + executed shown-failing controls
+ae30859 test: table-driven CarryoverBlocks edge tests + no-node/no-mutation guards
+7fcb39c feat: implement OK.4.B-task3
+bc47213 feat: implement OK.4.B-task2
+ce8e68f feat: implement OK.4.B-task1
+d541a89 chore: init worktree OK.4.B-flow
+```
+
 ## [2026-08-21]
 
 ### OK.4.A closed — CarryoverArchiveRow, DisposalReason, AmendsRef
