@@ -28,5 +28,6 @@ pub use state::{
     CarryoverScope, ClearsWhen, ClearsWhenPredicate, CrossRepoEdge, Endpoint, Epic, ExternalDep,
     Focus, KnownCarryoverKind, OperatorDep, Origin, Reference, RepoRollup, StateEdge,
     StateEdgeKind, StateFile, StateGraph, StateLoadError, StateNode, StateSource, TierEntry, Track,
-    TrackBlock, build_state_graph, load_state,
+    TrackBlock, W_STATE_OP_SLUG_STUTTER, build_state_graph, load_state, normalize_op_slug, op_id,
+    op_slug_stutters,
 };
