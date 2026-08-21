@@ -847,10 +847,6 @@ pub struct Carryover {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "typeshare", typeshare::typeshare)]
-// Not yet referenced: `CarryoverArchiveRow` (which embeds this as its
-// `reason` field) and the crate-root re-export land in the next two tasks
-// of this same block (OK.4.A tasks 3-4).
-#[allow(dead_code)]
 pub enum DisposalReason {
     /// The condition that made this entry matter is gone.
     Cleared,
@@ -873,9 +869,6 @@ pub enum DisposalReason {
 /// fields need neither — the format has no room to be malformed.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(feature = "typeshare", typeshare::typeshare)]
-// Not yet referenced: `CarryoverArchiveRow::amends` and the crate-root
-// re-export land in the next two tasks of this same block (OK.4.A tasks 3-4).
-#[allow(dead_code)]
 pub struct AmendsRef {
     /// Stable slug of the row being corrected.
     pub slug: String,
@@ -905,9 +898,6 @@ pub struct AmendsRef {
 /// can catch the relocation. See the tests added alongside this struct.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "typeshare", typeshare::typeshare)]
-// Not yet referenced outside its own tests: the crate-root re-export lands
-// in the next task of this same block (OK.4.A task 4).
-#[allow(dead_code)]
 pub struct CarryoverArchiveRow {
     /// The disposed entry, embedded verbatim — including its own
     /// unmodeled `extra` map. Unchanged by this block.
