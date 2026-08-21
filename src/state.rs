@@ -2084,4 +2084,67 @@ mod tests {
             serde_json::json!({"type": "carryover", "slug": "note-deletion-bug"})
         );
     }
+
+    // -----------------------------------------------------------------
+    // OK.ticket.op-slug-stutter-warning: op_id / op_slug_stutters /
+    // normalize_op_slug
+    // -----------------------------------------------------------------
+
+    /// One shared case table — (slug, expects_stutter, expected_normalized,
+    /// expected_op_id) — asserted against the free functions (this test)
+    /// and, in a separate test, against `OperatorDep`/`ApprovalDep`'s
+    /// inherent methods, so the two call sites cannot silently drift apart.
+    ///
+    /// `operator-` and `operators-guild` are the boundary cases a naive
+    /// `starts_with("operator")` or a naive strip gets wrong: `operator-`
+    /// has no remainder to strip, and `operators-guild`'s prefix is
+    /// `operators-`, not the exact literal `operator-`.
+    fn op_slug_cases() -> Vec<(&'static str, bool, &'static str, &'static str)> {
+        vec![
+            (
+                "mac-mini-visit",
+                false,
+                "mac-mini-visit",
+                "OP.mac-mini-visit",
+            ),
+            (
+                "operator-mac-mini-visit",
+                true,
+                "mac-mini-visit",
+                "OP.operator-mac-mini-visit",
+            ),
+            ("operator", false, "operator", "OP.operator"),
+            ("operator-", false, "operator-", "OP.operator-"),
+            (
+                "operators-guild",
+                false,
+                "operators-guild",
+                "OP.operators-guild",
+            ),
+            (
+                "operator-operator-x",
+                true,
+                "operator-x",
+                "OP.operator-operator-x",
+            ),
+            ("", false, "", "OP."),
+        ]
+    }
+
+    #[test]
+    fn op_slug_free_functions_match_table() {
+        for (slug, expects_stutter, expected_normalized, expected_op_id) in op_slug_cases() {
+            assert_eq!(
+                op_slug_stutters(slug),
+                expects_stutter,
+                "op_slug_stutters({slug:?})"
+            );
+            assert_eq!(
+                normalize_op_slug(slug),
+                expected_normalized,
+                "normalize_op_slug({slug:?})"
+            );
+            assert_eq!(op_id(slug), expected_op_id, "op_id({slug:?})");
+        }
+    }
 }
