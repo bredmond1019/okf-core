@@ -2147,4 +2147,114 @@ mod tests {
             assert_eq!(op_id(slug), expected_op_id, "op_id({slug:?})");
         }
     }
+
+    /// Same table as [`op_slug_free_functions_match_table`], walked through
+    /// `OperatorDep`/`ApprovalDep`'s inherent methods instead of the free
+    /// functions, so the delegation (task 2) cannot silently drift from the
+    /// rule it delegates to.
+    #[test]
+    fn op_slug_inherent_methods_match_table() {
+        for (slug, expects_stutter, _expected_normalized, expected_op_id) in op_slug_cases() {
+            let operator = OperatorDep {
+                slug: slug.to_string(),
+                exit: "planning/handoff.md".to_string(),
+                start: "/begin-session example".to_string(),
+                what: None,
+            };
+            assert_eq!(
+                operator.slug_stutters(),
+                expects_stutter,
+                "OperatorDep::slug_stutters({slug:?})"
+            );
+            assert_eq!(
+                operator.op_id(),
+                expected_op_id,
+                "OperatorDep::op_id({slug:?})"
+            );
+
+            let approval = ApprovalDep {
+                slug: slug.to_string(),
+                what: "example decision".to_string(),
+                digest: "sha256:example".to_string(),
+            };
+            assert_eq!(
+                approval.slug_stutters(),
+                expects_stutter,
+                "ApprovalDep::slug_stutters({slug:?})"
+            );
+            assert_eq!(
+                approval.op_id(),
+                expected_op_id,
+                "ApprovalDep::op_id({slug:?})"
+            );
+        }
+    }
+
+    /// A `state.json` fixture carrying one operator edge and one approval
+    /// edge must serialize byte-identically (via `serde_json::Value`
+    /// equality — key order/whitespace are not part of the contract, see
+    /// `load_state_roundtrip_real_fixture` above) to its input after a
+    /// load-then-serialize cycle. Pins that this ticket moved no wire shape:
+    /// no field, serde attribute, or typeshare annotation changed on either
+    /// struct.
+    #[test]
+    fn operator_and_approval_edges_roundtrip_byte_identical() {
+        let json = r#"{
+            "repo": "bastion",
+            "kind": "project",
+            "updated": "2026-08-20",
+            "note": null,
+            "focus": {"now": [], "next": [], "blocked": []},
+            "tracks": [
+                {
+                    "title": "Phase 1",
+                    "blocks": [
+                        {
+                            "id": "BA.1.A",
+                            "title": "gated block",
+                            "status": "open",
+                            "depends_on": [
+                                {
+                                    "type": "operator",
+                                    "slug": "operator-mac-mini-visit",
+                                    "exit": "planning/handoff.md",
+                                    "start": "/begin-session operator-mac-mini-visit",
+                                    "what": null
+                                },
+                                {
+                                    "type": "approval",
+                                    "slug": "approve-devto-sweep",
+                                    "what": "publish the four Dev.to tag edits",
+                                    "digest": "sha256:abcd1234"
+                                }
+                            ],
+                            "wave": 1,
+                            "origin": null,
+                            "priority": null,
+                            "due": null,
+                            "sdlc_workflow": null,
+                            "model": null
+                        }
+                    ]
+                }
+            ],
+            "repos": [],
+            "cross_repo": [],
+            "tiers": [],
+            "backlog": [],
+            "carryover": []
+        }"#;
+
+        let file: StateFile = serde_json::from_str(json).unwrap();
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+        assert_eq!(original, round);
+
+        let deps = &file.tracks[0].blocks[0].depends_on;
+        assert_eq!(deps.len(), 2);
+        assert!(
+            matches!(&deps[0], BlockedBy::Operator(op) if op.slug == "operator-mac-mini-visit")
+        );
+        assert!(matches!(&deps[1], BlockedBy::Approval(ap) if ap.slug == "approve-devto-sweep"));
+    }
 }
