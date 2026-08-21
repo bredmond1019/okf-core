@@ -526,6 +526,37 @@ waiver` — this is what stops the file from rotting. Once the owning block land
 compiles again, the waiver itself must be *deleted*, not left in place: its mere presence is what
 now breaks the build. Do not "fix" a stale-waiver failure by keeping the row; remove it.
 
+### The inherited `GIT_DIR` trap
+
+`check_consumers.sh` unsets `GIT_DIR`, `GIT_WORK_TREE` and their siblings before doing anything
+else, and that is load-bearing rather than hygiene. **An inherited `GIT_DIR` overrides
+`git -C <dir>`** — git resolves the repository from the environment and ignores the directory it
+was pointed at. Since `hooks/pre-push` exports `GIT_DIR`, without the scrub every consumer's
+dirty-tree check silently reports on *okf-core* instead of on the consumer, so each one inherits
+okf-core's cleanliness rather than its own.
+
+This was not theoretical: it blocked OK.5.A's own push with the gate that block had just added.
+Measured — `scripts/test_check_consumers.sh` passed 21/21 from a shell and 3/21 under the real
+hook, from this cause alone. The same root cause produced a P0 in `mev` (MV.17.A), where an
+inherited `GIT_DIR` made a test fixture run `git init` against the real `core/mev` repository.
+
+Two consequences worth keeping:
+
+- **Discovering zero consumers is a hard failure, not a clean run.** okf-core has had at least
+  three path-dependent consumers throughout its life, so an empty list means discovery itself
+  broke. Reporting "all consumers pass" having compiled none is the exact silent-green failure the
+  gate exists to prevent.
+- **The test suite's `git` shim deliberately emulates git's `GIT_DIR`-over-`-C` precedence.** A
+  shim that honoured `-C` unconditionally would let the two hook-environment regression cases pass
+  against a script with no scrub at all — i.e. the tests would be decorative. If you simplify the
+  shim, re-run the control: delete the `unset GIT_...` lines and confirm the suite goes red.
+
+To verify the scrub is still doing its job:
+
+```bash
+GIT_DIR=$PWD/.git scripts/test_check_consumers.sh   # expect: 26 passed, 0 failed
+```
+
 ### Relationship to `mev check-consumers`
 
 `mev` already runs this same idea against its own crate — `mev check-consumers`, hardcoded to
