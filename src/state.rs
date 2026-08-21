@@ -1198,6 +1198,31 @@ pub fn build_state_graph(files: &[(StateSource, StateFile)]) -> StateGraph {
                 source_path: path.clone(),
             });
         }
+
+        // --- CarryoverBlocks edges: from carryover[].blocks[] ---
+        // A per-entry `enforce: Some(false)` opt-out suppresses every edge
+        // this entry would otherwise emit. `None`/`Some(true)` both enforce.
+        // No StateNode is ever pushed for a carryover — `to_ref` is
+        // targetless on this edge kind (see StateEdgeKind::CarryoverBlocks).
+        // Direction mirrors BlockedBy: `from` is the held block (the
+        // dependent), `to_ref` is the carryover holding it — so a renderer
+        // that draws every edge kind uniformly draws this one the right way
+        // round too.
+        for carryover in &file.carryover {
+            if carryover.enforce == Some(false) {
+                continue;
+            }
+            for dep in &carryover.blocks {
+                if let BlockedBy::Block(BlockDep { repo, id, .. }) = dep {
+                    edges.push(StateEdge {
+                        from: format!("{repo}:{id}"),
+                        to_ref: format!("carryover:{}/{}", src.repo_slug, carryover.slug),
+                        kind: StateEdgeKind::CarryoverBlocks,
+                        source_path: path.clone(),
+                    });
+                }
+            }
+        }
     }
 
     StateGraph { nodes, edges }
