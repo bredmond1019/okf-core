@@ -12,6 +12,20 @@ timestamp: "2026-08-17T11:53:07-03:00"
 
 # Log
 
+## [run: 2026-08-27]
+
+### Build cleanup: `[profile.dev]` link-time fix
+
+Added `[profile.dev]` (`line-tables-only` debug info + unpacked split-debuginfo) to `Cargo.toml` —
+same fleet-wide build-speed pass applied across every `core/*` Rust repo this session. No dead
+`sccache` config here to remove (never configured). `cargo audit` came back clean, no dependency
+changes needed. fmt/clippy `--all-targets`/`cargo test` all pass. See HQ's
+`docs/infrastructure.md`'s "Rust build artifacts" section and `docs/rust-dependency-audit.md`.
+
+```
+a362294 perf(build): add profile.dev to cut link time
+```
+
 ## [run: 2026-08-21]
 
 ### OK.5.A closed — consumer compile gate in okf-core
