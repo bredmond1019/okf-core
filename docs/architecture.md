@@ -7,7 +7,7 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [okf-core, OKF frontmatter, brain graph, state.json, BrainDocModel, Rust]
-related: [okf-core]
+related: [core:okf-core]
 ---
 
 # okf-core architecture

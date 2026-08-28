@@ -7,7 +7,7 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [okf-core, docs index]
-related: [okf-core, okf-core-architecture]
+related: [core:okf-core, okf-core-architecture]
 ---
 
 # okf-core docs
