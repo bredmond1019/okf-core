@@ -279,6 +279,8 @@ mod tests {
             status: Some("active".into()),
             keywords: vec!["okf".into(), "frontmatter".into(), "scaffold".into()],
             related: vec!["okf-core".into()],
+            created: Some("2026-08-29".into()),
+            updated: Some("2026-08-29".into()),
             synced_from: None,
         };
         let flat_out = serialize_frontmatter(&fm);
@@ -309,6 +311,8 @@ mod tests {
                 "related",
                 FrontmatterValue::InlineList(vec!["okf-core".into()]),
             ),
+            field("created", FrontmatterValue::Scalar("2026-08-29".into())),
+            field("updated", FrontmatterValue::Scalar("2026-08-29".into())),
         ]);
 
         assert_eq!(flat_out, nested_out);

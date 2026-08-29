@@ -264,6 +264,8 @@ mod flat_surface_guard {
             status: Some("active".into()),
             keywords: vec!["okf".into(), "frontmatter".into(), "scaffold".into()],
             related: vec!["okf-core".into()],
+            created: None,
+            updated: None,
             synced_from: None,
         }
     }

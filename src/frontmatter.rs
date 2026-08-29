@@ -40,6 +40,14 @@ pub struct OkfFrontmatter {
     pub keywords: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<String>,
+    /// When the document was first created. Presence-only, informational; no
+    /// format is enforced here. Emitted by `serialize_frontmatter` after `related`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// When the document was last updated. Presence-only, informational; no
+    /// format is enforced here. Emitted by `serialize_frontmatter` after `created`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated: Option<String>,
     /// Cross-repo sync watermark: the `synced_from` date the brain cache was last synced from.
     /// Presence-only; not format-checked here. Read-side field — never emitted by
     /// `serialize_frontmatter` (see below), so existing serializer output stays unchanged.
@@ -87,6 +95,12 @@ pub fn serialize_frontmatter(fm: &OkfFrontmatter) -> String {
     }
     if !fm.related.is_empty() {
         push_list(&mut out, "related", &fm.related);
+    }
+    if let Some(v) = fm.created.as_deref().filter(|s| !s.is_empty()) {
+        push_scalar(&mut out, "created", v);
+    }
+    if let Some(v) = fm.updated.as_deref().filter(|s| !s.is_empty()) {
+        push_scalar(&mut out, "updated", v);
     }
 
     out.push_str("---\n");
@@ -200,6 +214,8 @@ mod tests {
             status: Some("active".into()),
             keywords: vec!["okf".into(), "frontmatter".into(), "scaffold".into()],
             related: vec!["okf-core".into()],
+            created: Some("2026-08-29".into()),
+            updated: Some("2026-08-29".into()),
             synced_from: None,
         }
     }
@@ -226,6 +242,8 @@ project: bastion
 status: active
 keywords: [okf, frontmatter, scaffold]
 related: [okf-core]
+created: 2026-08-29
+updated: 2026-08-29
 ---
 ";
         assert_eq!(out, expected);
@@ -244,6 +262,19 @@ related: [okf-core]
         assert!(!out.contains("doc_id"));
         assert!(!out.contains("layer"));
         assert!(!out.contains("keywords"));
+    }
+
+    #[test]
+    fn serialize_omits_created_updated_when_absent() {
+        let fm = OkfFrontmatter {
+            type_: Some("Log".into()),
+            title: Some("T".into()),
+            description: Some("D".into()),
+            ..Default::default()
+        };
+        let out = serialize_frontmatter(&fm);
+        assert!(!out.contains("created"));
+        assert!(!out.contains("updated"));
     }
 
     #[test]
@@ -275,6 +306,8 @@ related: [okf-core]
             "status:",
             "keywords:",
             "related:",
+            "created:",
+            "updated:",
         ];
         let positions: Vec<usize> = order.iter().map(|k| pos(k)).collect();
         for w in positions.windows(2) {
@@ -374,6 +407,18 @@ related: [okf-core]
     }
 
     #[test]
+    fn roundtrip_created_updated_survive_parse() {
+        let mut fm = full();
+        fm.created = Some("2026-08-29".into());
+        fm.updated = Some("2026-08-29".into());
+        let out = serialize_frontmatter(&fm);
+
+        let parsed = parse_frontmatter(&out).expect("serialized block must parse");
+        assert_eq!(parsed.fields["created"].0, "2026-08-29");
+        assert_eq!(parsed.fields["updated"].0, "2026-08-29");
+    }
+
+    #[test]
     fn roundtrip_default_parses_with_required_fields_empty() {
         // A bare stamp (all required unset) must serialize and parse, with each
         // required field present but empty — the backfill signal.
@@ -427,6 +472,8 @@ project: bastion
 status: active
 keywords: [okf, frontmatter, scaffold]
 related: [okf-core]
+created: 2026-08-29
+updated: 2026-08-29
 ---
 ";
         assert_eq!(
