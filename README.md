@@ -206,14 +206,24 @@ Integration tests live under [`tests/`](tests/): [`tests/doc_roundtrip.rs`](test
 [`tests/state_preservation.rs`](tests/state_preservation.rs), and
 [`tests/struct_defaults.rs`](tests/struct_defaults.rs).
 
+Those four commands are the fast loop, not the whole gate — the consumer compile gate, the
+typeshare guard, the block-record validator and the git hooks are catalogued in
+[`docs/checks.md`](docs/checks.md).
+
 ## Consumers
 
-This crate is a member of a private Cargo workspace and is consumed via path dependency by two
-sibling tools in that workspace:
+This crate is a member of a private Cargo workspace. Consumers are **discovered, not hardcoded** —
+[`scripts/check_consumers.sh --list`](scripts/check_consumers.sh) names them by walking each repo's
+manifest for a path dependency resolving here. Today that finds three:
 
-- **`bastion`** — uses it for frontmatter and graph validation (`bastion validate`) and graph
-  queries (`bastion brain`).
-- **`mev`** — uses it for `mev validate-brain`, `mev emit-state`, and `mev emit-graph`.
+- **`bastion`** — frontmatter and graph validation (`bastion validate`) and graph queries
+  (`bastion brain`).
+- **`mev`** — `mev validate-brain`, `mev emit-state`, and `mev emit-graph`.
+- **`engine-rs`** — via `[workspace.dependencies]`.
+
+Because those three compile against this crate, a change to a shared type can pass `cargo test`
+here and still break them — which is what the consumer compile gate in
+[`docs/checks.md`](docs/checks.md) exists to catch.
 
 Both are part of the broader **Bastion** ecosystem — see the
 [bastion-os](https://github.com/bredmond1019/bastion-os) meta-repo for the full architecture.
@@ -223,6 +233,7 @@ Both are part of the broader **Bastion** ecosystem — see the
 - [`docs/index.md`](docs/index.md) — index of this repo's reference docs.
 - [`docs/architecture.md`](docs/architecture.md) — module map, key types, data flow, and the
   `typeshare` feature in full detail.
+- [`docs/checks.md`](docs/checks.md) — every runnable check and script, and which ones gate a push.
 
 ## License
 

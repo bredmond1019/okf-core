@@ -14,7 +14,60 @@ related: [core:okf-core]
 
 `okf-core` is a pure, no-I/O Rust leaf library (only `serde`, `serde_json`, `thiserror`) that
 owns four brain contracts as a single source of truth, consumed by sibling crates (`bastion`,
-`mev`) via path dependency inside the `core/` Cargo workspace.
+`mev`, `engine-rs`) via path dependency inside the `core/` Cargo workspace.
+
+## What this page is for
+
+You are here because you need to change a type, or find out which type already models the thing
+you are about to model. This page maps every module to what it owns, then explains the four
+non-obvious mechanisms — whole-object state preservation, typed-with-fallback vocabularies, the
+schema/struct conformance gate, and the consumer compile gate — that make a change here safe.
+
+If you only want to *use* the crate, [`../README.md`](../README.md) § Public API is the shorter
+answer. If you want to *run* something, [`checks.md`](checks.md) is the catalogue of commands.
+
+## Quickstart
+
+Shell commands, from the repo root. Nothing here is a Claude Code slash command.
+
+```bash
+cargo test                                   # the suite; authoritative for a verdict
+cargo clippy --all-targets -- -D warnings    # lint gate, test targets included
+scripts/check_consumers.sh --list            # who depends on this crate (compiles nothing)
+```
+
+Finding your way to the right file:
+
+| You want to | Start at |
+|---|---|
+| Add or change an OKF frontmatter field | `src/frontmatter.rs` + `src/parse.rs`, then [§ Module map](#module-map) |
+| Add a `state.json` field | `src/state.rs`, then [§ Whole-object state preservation](#whole-object-state-preservation-authored-vs-derived) — an authored struct and a derived view are treated differently |
+| Add a value to an existing vocabulary | [§ Typed-with-fallback](#typed-with-fallback--how-to-type-a-vocabulary-without-a-parse-cliff) |
+| Add a new typed document shape | [§ The `doc` module](#the-doc-module--typed-brain-documents) — implement `BrainDocModel` |
+| Understand why your change broke a sibling repo | [§ Consumer compile gate](#consumer-compile-gate) |
+
+## The four contracts
+
+```mermaid
+flowchart TD
+    MD["Markdown file<br/>(frontmatter + body)"] --> FM["frontmatter / parse<br/>flat OKF fields"]
+    MD --> DOC["doc<br/>typed brain documents"]
+    FM --> GR["graph<br/>related: -> edges"]
+    GR --> GE["graph_emit<br/>JSON export"]
+    SJ["planning/state.json"] --> ST["state<br/>blocks, deps, carryover"]
+    ST --> SG["build_state_graph<br/>block dependency graph"]
+    FM --> C["Consumers: bastion, mev, engine-rs"]
+    GE --> C
+    SG --> C
+    DOC --> C
+```
+
+In sentences: a Markdown file's frontmatter is read by the flat `frontmatter`/`parse` pair, or —
+for documents with nested frontmatter — by the typed `doc` layer. The `related:` fields across the
+corpus become a structural graph (`graph`), which `graph_emit` serializes for an external store. A
+separate input, `planning/state.json`, is modelled by `state` and joined into a block-dependency
+graph. **Every arrow ends in a consumer binary: this crate does no file I/O and makes no policy
+decision**, so all four contracts are shapes that `bastion`, `mev` and `engine-rs` act on.
 
 ## Module map
 
@@ -167,33 +220,32 @@ The second sketch model, over the engine-rs `PROPOSAL_GENERATOR` deliverable,
 
 ## Data flow
 
-```
-                     ┌─────────────────────────┐
- typed model  ──────▶│  BrainDocModel trait     │
- (Opportunity /       │  .frontmatter() ─┐       │
-  LearningArtifact /   │  .body()        │       │
-  Proposal)            │  .slug()        │       │
-                     └──────────────────┼───────┘
-                                        ▼
-                          serialize_nested_frontmatter()
-                                        +
-                                 BodySpec::render()
-                                        │
-                                        ▼
-                              render_document(&model)
-                                        │
-                                        ▼
-                          full document text (frontmatter + body)
-                                        │
-                     (materializer — mev MV.9.A — writes to disk,
-                      reconciles IndexIntent into index.md; no I/O here)
+The write path turns a typed model into document text; the read path recovers the model from that
+text. Both are pure — **the arrow into disk is drawn by a consumer, not by this crate.**
 
-                 read half (round trip):
-                 source text ──▶ parse_nested_frontmatter() ──▶ Vec<(String, FrontmatterValue)>
-                                                                        │
-                                                                        ▼
-                                                    Model::from_frontmatter(fields)
+```mermaid
+flowchart TD
+    M["Typed model<br/>Opportunity / LearningArtifact / Proposal"] --> T["BrainDocModel trait<br/>.frontmatter() .body() .slug()"]
+    T --> S["serialize_nested_frontmatter()<br/>+ BodySpec::render()"]
+    S --> R["render_document(&model)"]
+    R --> D["Full document text<br/>frontmatter + body"]
+    D -.-> W["Materializer (mev MV.9.A):<br/>writes the file, reconciles IndexIntent<br/>into index.md — no I/O here"]
+    SRC["Source text"] --> P["parse_nested_frontmatter()"]
+    P --> V["Vec&lt;(String, FrontmatterValue)&gt;"]
+    V --> F["Model::from_frontmatter(fields)"]
+    F --> M
 ```
+
+In sentences:
+
+1. A concrete model (`Opportunity`, `LearningArtifact`, `Proposal`) implements `BrainDocModel`,
+   which exposes its frontmatter fields, its body, and its derived slug.
+2. `render_document` calls `serialize_nested_frontmatter` for the frontmatter and `BodySpec` for
+   the body, and returns the full document as a `String`.
+3. **Nothing is written.** A materializer in `mev` (block `MV.9.A`) takes that string, writes it to
+   disk, and reconciles the model's `IndexIntent` into the target `index.md`.
+4. Reading back is the mirror: `parse_nested_frontmatter` recovers all four `FrontmatterValue`
+   shapes from source text, and each model's `from_frontmatter` rebuilds itself from those fields.
 
 ## Tests
 
@@ -203,12 +255,8 @@ Integration fixture tests live in `tests/doc_roundtrip.rs`, backed by fixtures i
 parse→serialize→parse fidelity, idempotence, mev-compatible generated-body sentinels, and that
 flat-frontmatter surfaces are unchanged by the nested layer.
 
-```bash
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build --release
-```
+Every command that gates this repo, and every script that does not, is catalogued in
+[`checks.md`](checks.md).
 
 ## Schema/struct conformance gate
 
@@ -567,5 +615,7 @@ check-consumers` itself is a different, tracked block (`mev` MV.18.A) — untouc
 
 ## See also
 
-- [`../README.md`](../README.md) — crate overview, consumers, dependencies
+- [`../README.md`](../README.md) — crate overview, public API, consumers, dependencies
+- [`checks.md`](checks.md) — every runnable check and script, and how to invoke each
+- [`../hooks/README.md`](../hooks/README.md) — the tracked git hooks and what each blocks on
 - `business/docs/opportunities/index.md` — the live contract `Opportunity` targets
