@@ -7,10 +7,44 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-17T11:53:07-03:00"
+timestamp: "2026-08-29T15:40:00-03:00"
 ---
 
 # Log
+
+## [run: 2026-08-29]
+
+### Docs pass on the repo's runnable surface, then `created`/`updated` documented fleet-wide
+
+Audited this repo's docs against five defect classes. Three were already clean — the README covers
+all 74 `src/lib.rs` re-exports, no relative link points into the gitignored `planning/` vault, and
+no link 404s. Two were real. **The runnable surface had no catalogue**: `scripts/check_block_records.py`
+was documented nowhere, and `check_consumers.sh` / `test_check_consumers.sh` / `check-typeshare.sh`
+only deep inside `architecture.md`. New [`docs/checks.md`](docs/checks.md) is that catalogue —
+7 gated harness checks, 2 ungated scripts, the hooks, derived from `planning/harness.json` and the
+script sources rather than from doc titles. **`architecture.md` was detail-first**, opening on
+`## Module map`; it now opens with a plain-English section, a Quickstart, and a mermaid diagram of
+the four contracts, with the ASCII data-flow converted to mermaid plus numbered sentences.
+`docs/index.md` regrouped into task-oriented sections with one-line cells.
+
+One claim was wrong and only source caught it: the README said okf-core had **two** consumers.
+`planning/harness.json` and `check_consumers.sh`'s discovery both say **three** — `mev`, `bastion`,
+`engine-rs` (the last via `[workspace.dependencies]`). Fixed in both the README and
+`architecture.md`.
+
+Then `OK.ticket.add-created-updated-frontmatter` landed (`d99d85e`, 2/2 tasks, 178 unit + 70
+integration tests green), adding optional `created`/`updated` scalars to `OkfFrontmatter`. Its
+consumer gate correctly caught `mev` — an exhaustive struct literal in `src/brain/manifest.rs`
+missing the two new fields — which mev's own session then fixed. Documented the fields where authors
+look: a new section in HQ's `docs/okf-frontmatter.md`, one in `core/mev/docs/okf-schema.md`, and an
+example plus checklist row in the `write-okf-markdown` skill, synced to 19 repos.
+
+- **What:** `docs/checks.md` (new), `docs/architecture.md`, `docs/index.md`, `README.md`; downstream,
+  the HQ + mev schema docs and the `write-okf-markdown` skill.
+- **Why:** the crate's public API was well documented; how to *run* anything in the repo was not.
+  And two new frontmatter fields shipped with no prose anywhere telling an author how to spell them.
+- **Refs:** `OK.ticket.add-created-updated-frontmatter`; carryover
+  `created-updated-frontmatter-ship-unvalidated-fleet-wide`.
 
 ## [run: 2026-08-27]
 
