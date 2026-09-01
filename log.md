@@ -7,10 +7,38 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-08-29T15:40:00-03:00"
+timestamp: "2026-09-01T00:35:47-03:00"
 ---
 
 # Log
+
+## [run: 2026-08-31]
+
+### `planning/context.md` audit — it described three contracts; the crate has four
+
+- **What:** Audited `planning/context.md` against the real repo state (not a full `/update-docs`
+  sweep). The "What It Is" section listed **three** contracts and omitted the entire `doc` module —
+  `BrainDocModel`, `LearningArtifact`, `Opportunity`, `Proposal`, `render_document`, nested
+  frontmatter — which `docs/architecture.md` has counted as the fourth contract for some time.
+  Completed the type lists for contracts 2 and 3 from `src/lib.rs`'s actual re-exports
+  (`EdgeResolution`, `GraphArtifact`, `ExportedEdge`, `Block`, `BlockedBy`, `Carryover`, `Epic`);
+  corrected the dependency claim to note the optional feature-gated `typeshare`; added `engine-rs`
+  to the consumer list. Added the two sections the file never had: a **Document Set** table (all 12
+  `planning/` entries incl. `blocks/`, `orchestration-run/`, `handoff.md`, plus the `docs/` tree,
+  `README.md`, `AGENT.md`/`CLAUDE.md`, `log.md`, each with a volatility column, and an explicit note
+  that this repo has no `decisions/` folder) and a **Governing Principles** list of 8 rules —
+  CLAUDE.md's one numbered standing rule plus its two unnumbered load-bearing sections (workflow
+  telemetry, the `planning/` symlink), then AGENT.md's five — each condensed to one line with a
+  pointer back to the canonical source. Widened `related:` to five more doc_ids, grepping each
+  target's actual `doc_id:` line first because this repo's convention is inconsistent
+  (`master-plan` is prefixed, `status` is not). Links to the `docs/` tree are deliberately plain
+  code spans, not markdown links: a relative link climbing out of `planning/` resolves against the
+  `_planning/` vault, not the repo.
+- **Why:** `context.md` is the file every agent reads first, and it had drifted structurally rather
+  than cosmetically — an agent orienting from it would not know the `doc` module existed, and would
+  find no standing rules at all in the document that claims to be the router. Verified with all
+  three gates: `bastion validate-brain --structure`, `--links`, `--graph`, 0 errors each.
+- **Refs:** `planning/context.md`, `docs/architecture.md`, `CLAUDE.md`, `AGENT.md`
 
 ## [run: 2026-08-29]
 
