@@ -77,7 +77,7 @@ decision**, so all four contracts are shapes that `bastion`, `mev` and `engine-r
 | `parse` | `src/parse.rs` | `Frontmatter`, `ParseResult`, `extract_frontmatter`, `parse_frontmatter` — the flat frontmatter read path |
 | `graph` | `src/graph.rs` | `Edge`, `EdgeKind`, `Graph`, `Node`, `GraphArtifact`, `resolve_edge` — the brain structural graph model |
 | `graph_emit` | `src/graph_emit.rs` | `ExportedEdge`, `GraphExport`, `build_graph_export` — graph export for `mev emit-graph` |
-| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `CarryoverKind` (+ `KnownCarryoverKind`), `CarryoverArchiveRow`, `DisposalReason`, `AmendsRef`, `Reference`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `StateEdgeKind` (`BlockedBy`, `CrossRepo`, `CarryoverBlocks` — the last from `carryover[].blocks[]{type:"block"}`, targetless on `to_ref`), `load_state`, `build_state_graph`, `op_id`/`op_slug_stutters`/`normalize_op_slug` (+ `W_STATE_OP_SLUG_STUTTER`) — the `planning/state.json` schema and its derived graph |
+| `state` | `src/state.rs` | `StateFile`, `StateGraph`, `Epic`, `Focus`, `Block`, `Track`, `Backlog`, `Carryover`, `CarryoverKind` (+ `KnownCarryoverKind`), `CarryoverNeeds` (+ `KnownCarryoverNeeds`), `CarryoverArchiveRow`, `DisposalReason`, `AmendsRef`, `Reference`, `ClearsWhen`, `ClearsWhenPredicate`, `BlockedBy` (+ its payload structs `BlockDep`, `ExternalDep`, `OperatorDep`, `ApprovalDep`), `StateEdgeKind` (`BlockedBy`, `CrossRepo`, `CarryoverBlocks` — the last from `carryover[].blocks[]{type:"block"}`, targetless on `to_ref`), `load_state`, `build_state_graph`, `op_id`/`op_slug_stutters`/`normalize_op_slug` (+ `W_STATE_OP_SLUG_STUTTER`) — the `planning/state.json` schema and its derived graph |
 | `doc` | `src/doc/*.rs` | The typed **brain-document** layer — see below |
 
 All public items are re-exported flat from `src/lib.rs`; consumers import everything as
@@ -473,6 +473,15 @@ nothing — the known-vocabulary check stays in mev — so the leniency principl
 `ClearsWhen` uses the same pattern. `Carryover.kind` adopted it in
 `OK.ticket.carryover-kind-typed-enum`, which is also why the legacy `constraint` / `known_issue`
 values — still on ~131 live entries pending migration — keep loading: they land in `Unknown`.
+
+`Carryover.needs` is the third user of the pattern (`OK.ticket.carryover-needs-field`, 2026-09-02)
+and the first to arrive as an `Option`: `kind` says why an entry exists, `needs` says what kind of
+work closes it (`code` / `docs` / `state` / `operator` / `dedupe`). Being optional is what makes it
+non-breaking — it carries `#[serde(default, skip_serializing_if = "Option::is_none")]`, so the ~442
+live entries that predate it round-trip byte-identically instead of each gaining a `"needs": null`
+line on the next `emit-state --write`. Note the typeshare split that follows from the untagged
+shape: `KnownCarryoverNeeds` carries the annotation, the untagged wrapper does not, for the same
+reason `BlockedBy` puts it on the payload structs.
 Verified against the real corpus at the time, not only fixtures: all **51** `state.json` files in
 the fleet load with zero failures.
 
