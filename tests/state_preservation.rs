@@ -17,9 +17,9 @@
 // surface only (`okf_core::StateFile` etc.), same posture as `tests/schema_conformance.rs`.
 
 use okf_core::{
-    ApprovalDep, BlockDep, BlockedBy, Carryover, CarryoverKind, ClearsWhen, ClearsWhenPredicate,
-    ExternalDep, KnownCarryoverKind, OperatorDep, StateFile, StateLoadError, TrackBlock,
-    load_state,
+    ApprovalDep, BlockDep, BlockedBy, Carryover, CarryoverKind, CarryoverNeeds, ClearsWhen,
+    ClearsWhenPredicate, ExternalDep, KnownCarryoverKind, KnownCarryoverNeeds, OperatorDep,
+    StateFile, StateLoadError, TrackBlock, load_state,
 };
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
@@ -1039,4 +1039,150 @@ fn approvaldep_round_trips_byte_identically() {
 
     let round = serde_json::to_value(&dep).unwrap();
     assert_eq!(original, round);
+}
+
+// ---------------------------------------------------------------------------
+// `Carryover.needs` — typed `CarryoverNeeds` (see
+// `planning/OK.ticket.carryover-needs-field/`). Mirrors the `kind` suite
+// above: an absent field must not appear on round-trip (the ~442-entry live
+// case), the five known values must round-trip exactly, an unrecognized
+// value must round-trip via `Unknown` without aborting the file, and the
+// untagged declaration order (`Known` before `Unknown`) must actually be
+// exercised so reversing it fails a test rather than passing silently.
+// ---------------------------------------------------------------------------
+
+/// A carryover entry with no `needs` key, copied verbatim from a real live
+/// entry in this repo's own `planning/state.json`
+/// (`okf-core-main-blocked-title-misleads-git-log`), round-trips
+/// byte-identically — no `"needs": null` line appears. This is the fixture
+/// that stands in for the ~442 live entries fleet-wide that never mention
+/// `needs`.
+#[test]
+fn carryover_without_needs_round_trips_byte_identically() {
+    let raw = r#"{
+        "slug": "okf-core-main-blocked-title-misleads-git-log",
+        "scope": {"repo": "okf-core", "tier": null, "cross_repo": null},
+        "kind": "drift",
+        "text": "The squash commit 115e5f4 on okf-core main carries a stale [BLOCKED] title even though the block it squashes actually PASSED. Cosmetic but misleads `git log` provenance in a repo whose whole theme is authored provenance surviving automation. Fixing it requires a force-push to main (rewriting pushed history) - the user's call, not an automatic fix.",
+        "related": [],
+        "priority": 3,
+        "clears_when": {
+            "type": "command_exits_zero",
+            "command": "git -C core/okf-core log --format=%s -1 115e5f4 | grep -q 'PASS'",
+            "note": "passes once 115e5f4's subject is rewritten (force-push, operator's call) to reflect the actual PASS outcome instead of [BLOCKED]"
+        },
+        "created": "2026-08-04"
+    }"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let carryover: Carryover = serde_json::from_str(raw).unwrap();
+    assert_eq!(carryover.needs, None);
+
+    let round = serde_json::to_value(&carryover).unwrap();
+    assert_eq!(original, round);
+
+    let round_obj = round.as_object().unwrap();
+    assert!(
+        !round_obj.contains_key("needs"),
+        "needs must stay omitted when absent from the input, never gain a null line"
+    );
+}
+
+/// Each of the five known `needs` values deserializes to
+/// `CarryoverNeeds::Known(..)` and re-serializes to the exact same
+/// snake_case string.
+#[test]
+fn carryover_needs_known_values_round_trip() {
+    let cases = [
+        ("code", KnownCarryoverNeeds::Code),
+        ("docs", KnownCarryoverNeeds::Docs),
+        ("state", KnownCarryoverNeeds::State),
+        ("operator", KnownCarryoverNeeds::Operator),
+        ("dedupe", KnownCarryoverNeeds::Dedupe),
+    ];
+
+    for (raw_value, expected) in cases {
+        let raw = format!("\"{raw_value}\"");
+        let needs: CarryoverNeeds = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            needs,
+            CarryoverNeeds::Known(expected),
+            "{raw_value} must deserialize to Known(..)"
+        );
+
+        let round = serde_json::to_string(&needs).unwrap();
+        assert_eq!(
+            round, raw,
+            "{raw_value} must re-serialize to the exact same snake_case string"
+        );
+    }
+}
+
+/// An unrecognized `needs` value round-trips byte-identically through
+/// `CarryoverNeeds::Unknown` (a fixable-in-place typo rather than a reason
+/// to reject the whole entry), and the surrounding `state.json` still
+/// parses as a whole file — preserving the file, not merely the one value,
+/// is the actual claim.
+#[test]
+fn carryover_needs_unknown_value_round_trips_and_does_not_abort_file_load() {
+    let raw_value = "telepathy";
+    let raw = format!("\"{raw_value}\"");
+    let needs: CarryoverNeeds = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        needs,
+        CarryoverNeeds::Unknown(raw_value.to_string()),
+        "{raw_value} must deserialize to Unknown(..) unchanged"
+    );
+
+    let round = serde_json::to_string(&needs).unwrap();
+    assert_eq!(
+        round, raw,
+        "{raw_value} must re-serialize byte-identically, not normalized"
+    );
+
+    let file_raw = r#"{
+        "repo": "bastion",
+        "kind": "project",
+        "updated": "2026-08-14",
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [
+            {
+                "slug": "ba15-12-mev-context-seed",
+                "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+                "kind": "deferred",
+                "needs": "telepathy",
+                "text": "seed mev context",
+                "related": [],
+                "created": "2026-06-20"
+            }
+        ]
+    }"#;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    std::fs::write(&path, file_raw).unwrap();
+
+    let state = load_state(&path).expect("unknown needs value must not abort file load");
+    assert_eq!(
+        state.carryover[0].needs,
+        Some(CarryoverNeeds::Unknown("telepathy".to_string()))
+    );
+}
+
+/// Guards the `#[serde(untagged)]` declaration-order trap: `Known` must be
+/// declared before `Unknown` on `CarryoverNeeds`, or every known value
+/// silently collapses into `Unknown(String)` while every other test in this
+/// suite still passes (untagged tries variants in declaration order; the
+/// reverse order matches `Unknown(String)` first since any JSON string
+/// fits it). Without this assertion, swapping the order is invisible.
+#[test]
+fn carryover_needs_known_value_is_not_unknown_variant() {
+    let needs: CarryoverNeeds = serde_json::from_str("\"code\"").unwrap();
+    assert_eq!(needs, CarryoverNeeds::Known(KnownCarryoverNeeds::Code));
+    assert_ne!(needs, CarryoverNeeds::Unknown("code".to_string()));
 }
