@@ -780,6 +780,49 @@ impl Default for CarryoverKind {
     }
 }
 
+/// The fixed, known `Carryover.needs` vocabulary — what kind of work closes
+/// an entry (`code`, `docs`, `state`, `operator`, `dedupe`), as distinct from
+/// [`KnownCarryoverKind`], which says why the entry exists.
+///
+/// Carries the typeshare annotation itself (rather than the enclosing
+/// [`CarryoverNeeds`] wrapper) per [`BlockedBy`]'s documented rule at
+/// src/state.rs:196: typeshare cannot represent an untagged algebraic enum,
+/// so the payload type is annotated and the wrapper is not.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+pub enum KnownCarryoverNeeds {
+    Code,
+    Docs,
+    State,
+    Operator,
+    Dedupe,
+}
+
+/// `Carryover.needs`, typed with an `Unknown(String)` fallback.
+///
+/// Untagged: `Known` MUST stay the first variant. `#[serde(untagged)]` tries
+/// variants in declaration order, and the reverse would swallow every known
+/// value into `Unknown(String)`, silently defeating the whole point of the
+/// enum while every round-trip test still passes.
+///
+/// Mirrors [`CarryoverKind`] exactly, including its `Unknown(String)`
+/// fallback: a live entry with an unrecognized `needs` value is fixable in
+/// place, so it must round-trip rather than fail the file.
+///
+/// Deliberately NOT typeshare-annotated — see [`KnownCarryoverNeeds`].
+///
+/// okf-core defines the SHAPE only and never validates or evaluates it
+/// (AGENT.md rule 3); the known-vocabulary check lives in mev.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum CarryoverNeeds {
+    /// One of the fixed, known needs values.
+    Known(KnownCarryoverNeeds),
+    /// Anything else — preserved verbatim rather than rejected or coerced.
+    Unknown(String),
+}
+
 /// A durable caveat, known issue, environmental note, or deferred follow-on.
 ///
 /// Derives `Default` so downstream consumers construct this with
@@ -793,6 +836,14 @@ pub struct Carryover {
     pub scope: CarryoverScope,
     /// Item kind (`constraint`, `known_issue`, `env`, `deferred`).
     pub kind: CarryoverKind,
+    /// What kind of work closes this entry (`code`, `docs`, `state`,
+    /// `operator`, `dedupe`) — the axis orthogonal to `kind`, which says why
+    /// the entry exists. Optional and defaults to absent: ~442 live entries
+    /// have no value, and `skip_serializing_if` keeps them byte-identical
+    /// rather than gaining a `"needs": null` line on the next
+    /// `mev emit-state --write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<CarryoverNeeds>,
     /// The caveat / follow-on text.
     pub text: String,
     /// Optional related edges (same forms as blocked_by).
