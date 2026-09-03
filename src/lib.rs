@@ -14,7 +14,12 @@ mod graph_emit;
 mod parse;
 mod state;
 
-pub use coord::{COORD_STALE_TTL_SECONDS, Coord};
+pub use coord::{
+    COORD_STALE_TTL_SECONDS, Coord, DurableHomeChannel, Escalation, EscalationDurableHome,
+    EscalationRecord, HeartbeatRecord, HeartbeatValue, Lease, LeaseKind, LeaseRecord, LeaseScope,
+    Message, MessageDurableHome, MessageKind, MessageRecord, MessageSender, MessageSubject,
+    PidSource, Registry, RegistryClaim, Slot, SlotRecord,
+};
 pub use doc::{
     Action, BodySection, BodySpec, BrainDocModel, Contact, FrontmatterValue, IndexIntent,
     LearningArtifact, LearningArtifactError, NestedParseError, Opportunity, OpportunityError,

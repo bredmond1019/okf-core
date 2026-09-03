@@ -13,6 +13,23 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod escalation;
+pub mod heartbeat;
+pub mod lease;
+pub mod message;
+pub mod registry;
+pub mod slot;
+
+pub use escalation::{Escalation, EscalationDurableHome, EscalationRecord};
+pub use heartbeat::{HeartbeatRecord, HeartbeatValue};
+pub use lease::{Lease, LeaseKind, LeaseRecord, LeaseScope};
+pub use message::{
+    DurableHomeChannel, Message, MessageDurableHome, MessageKind, MessageRecord, MessageSender,
+    MessageSubject,
+};
+pub use registry::{Registry, RegistryClaim};
+pub use slot::{PidSource, Slot, SlotRecord};
+
 /// Staleness threshold for a coordination record, in seconds (5400s / 90 minutes).
 ///
 /// This fleet has accumulated three different "how old is too old" constants for what is
