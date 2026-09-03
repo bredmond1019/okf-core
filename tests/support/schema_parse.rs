@@ -257,6 +257,23 @@ pub fn is_derived(field: &str, derived: &BTreeSet<String>) -> bool {
     derived.contains(field)
 }
 
+/// Whether a documented field's Shape column marks it as deliberately
+/// carried through a struct's open `extra` capture map rather than a typed
+/// field — e.g. `backlog[]`'s `record` (`` `record` | string, extra | ... ``)
+/// and `parked_block`/`parked_track` (D12: `mev demote-block`'s parked-node
+/// bookkeeping is intentionally untyped so every pre-D12 consumer tolerates
+/// it with no `#[serde(default, skip_serializing_if)]` needed).
+///
+/// This is a THIRD exemption bucket alongside "derived" (computed, never
+/// authored) — an extra-capture field IS authored, but by design has no
+/// typed struct counterpart, so `struct_has_field` correctly reports it
+/// absent and `check_struct` must not treat that as drift. Matched on the
+/// literal substring `"extra"` in the Shape cell, which today is the only
+/// doc convention for this — see the two rows above.
+pub fn is_extra_capture(shape: &str) -> bool {
+    shape.contains("extra")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

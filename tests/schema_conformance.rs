@@ -25,7 +25,7 @@ use okf_core::{Backlog, Carryover, Epic, Reference, TrackBlock};
 use support::schema_doc::read_schema_doc;
 use support::schema_floor::expected_field_names;
 use support::schema_parse::{
-    DocumentedField, is_derived, parse_derived_fields, parse_field_tables,
+    DocumentedField, is_derived, is_extra_capture, parse_derived_fields, parse_field_tables,
 };
 use support::struct_probe::{HasExtra, struct_has_field};
 
@@ -92,10 +92,13 @@ fn reference_seed() -> Value {
     })
 }
 
-/// Check every documented, non-derived field in `fields` against struct `T`,
-/// pushing one violation line per failure onto `violations` rather than
-/// panicking on the first — a multi-field drift should surface in one run,
-/// not take N runs to diagnose.
+/// Check every documented, non-derived, non-extra-capture field in `fields`
+/// against struct `T`, pushing one violation line per failure onto
+/// `violations` rather than panicking on the first — a multi-field drift
+/// should surface in one run, not take N runs to diagnose. A field whose
+/// Shape column marks it `extra` (see [`is_extra_capture`]) is authored but
+/// deliberately has no typed struct counterpart, so it is exempted the same
+/// way a derived field is.
 fn check_struct<T>(
     seed: Value,
     fields: &[&DocumentedField],
@@ -107,6 +110,9 @@ fn check_struct<T>(
 {
     for field in fields {
         if is_derived(&field.name, derived) {
+            continue;
+        }
+        if is_extra_capture(&field.shape) {
             continue;
         }
         if !struct_has_field::<T>(seed.clone(), &field.name, &field.shape) {
