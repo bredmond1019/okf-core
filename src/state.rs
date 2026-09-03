@@ -878,7 +878,15 @@ pub struct Carryover {
     /// prose (the legacy and still-valid form for subjective conditions) or
     /// a typed predicate object whose `type` is one of `block_closed`,
     /// `file_exists`, `file_contains`, `command_exits_zero`.
-    #[serde(default)]
+    ///
+    /// `skip_serializing_if` matches every other `Option<_>` field on this
+    /// struct (`needs`, `priority`, `evidence`, `amends`): without it, an
+    /// entry authored with no `clears_when` at all round-trips through
+    /// `mev emit-state --write` gaining an explicit `"clears_when": null`
+    /// key it never had — the same class of authored-field mutation this
+    /// struct's `related` field carried before
+    /// MV.ticket.emit-state-write-is-corpus-wide-and-unscoped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clears_when: Option<ClearsWhen>,
     /// Date recorded (`YYYY-MM-DD` or full RFC3339).
     pub created: String,
@@ -1019,7 +1027,15 @@ pub struct Reference {
     /// Date recorded (`YYYY-MM-DD` or full RFC3339).
     pub created: String,
     /// Optional related edges (same forms as blocked_by).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ///
+    /// Deliberately NOT `skip_serializing_if`: `Carryover::related` (same
+    /// authored concept, same shape) has no skip either, and an authored
+    /// `"related": []` must round-trip as `[]`, not drop the key. The two
+    /// containers disagreeing here (this field alone carried the skip) is
+    /// what turned an authored `related: []` into a dropped key across a
+    /// `mev emit-state --write` regeneration — see
+    /// MV.ticket.emit-state-write-is-corpus-wide-and-unscoped.
+    #[serde(default)]
     pub related: Vec<BlockedBy>,
     /// Last "keep / re-affirm" disposition date — a full freshness-clock reset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1379,7 +1395,6 @@ mod tests {
                     "kind": "deferred",
                     "text": "seed mev context",
                     "related": [],
-                    "clears_when": null,
                     "created": "2026-06-20"
                 }
             ]
@@ -1797,7 +1812,6 @@ mod tests {
                         "text": "blocks OK.9.Z",
                         "related": [],
                         "blocks": {blocks_field},
-                        "clears_when": null,
                         "created": "2026-08-21"{enforce_field}
                     }}
                 ]
@@ -2684,7 +2698,6 @@ mod tests {
             "related": [],
             "priority": 2,
             "finding_id": "F-old-hazard",
-            "clears_when": null,
             "created": "2026-01-01",
             "reviewed": "2026-02-01",
             "legacy_field": "some pre-schema value",

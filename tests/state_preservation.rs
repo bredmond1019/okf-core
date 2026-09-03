@@ -94,7 +94,6 @@ fn fixture_with_unmodeled_fields() -> &'static str {
                 "kind": "deferred",
                 "text": "seed mev context",
                 "related": [],
-                "clears_when": null,
                 "created": "2026-06-20",
                 "future_field": "keep me"
             }
@@ -381,7 +380,8 @@ fn state_file_with_populated_reference_round_trips_byte_identically() {
                 "scope": {"repo": "mev", "tier": null, "cross_repo": null},
                 "class": "lesson",
                 "text": "The nextest rule is mev-scoped, not fleet-wide.",
-                "created": "2026-08-10"
+                "created": "2026-08-10",
+                "related": []
             }
         ]
     }"#;
@@ -432,7 +432,8 @@ fn reference_formerly_absorbed_by_extra_now_deserializes_into_typed_field() {
                 "scope": {"repo": null, "tier": null, "cross_repo": true},
                 "class": "trap",
                 "text": "planning/ is a symlink into the HQ-tracked vault.",
-                "created": "2026-08-01"
+                "created": "2026-08-01",
+                "related": []
             }
         ]
     }"#;
@@ -653,7 +654,6 @@ fn carryover_triage_fields_round_trip() {
             {"type": "external", "what": "blocks every ticket run fleet-wide"}
         ],
         "finding_id": "shared-finding-42",
-        "clears_when": null,
         "created": "2026-06-20"
     }"#;
     let original: serde_json::Value = serde_json::from_str(raw).unwrap();
