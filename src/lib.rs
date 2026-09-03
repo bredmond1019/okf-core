@@ -6,6 +6,7 @@
 //! the frontmatter contract has exactly one source of truth across the
 //! workspace.
 
+mod coord;
 mod doc;
 mod frontmatter;
 mod graph;
@@ -13,6 +14,7 @@ mod graph_emit;
 mod parse;
 mod state;
 
+pub use coord::{COORD_STALE_TTL_SECONDS, Coord};
 pub use doc::{
     Action, BodySection, BodySpec, BrainDocModel, Contact, FrontmatterValue, IndexIntent,
     LearningArtifact, LearningArtifactError, NestedParseError, Opportunity, OpportunityError,
