@@ -94,6 +94,7 @@ fn fixture_with_unmodeled_fields() -> &'static str {
                 "kind": "deferred",
                 "text": "seed mev context",
                 "related": [],
+                "clears_when": null,
                 "created": "2026-06-20",
                 "future_field": "keep me"
             }
@@ -654,6 +655,7 @@ fn carryover_triage_fields_round_trip() {
             {"type": "external", "what": "blocks every ticket run fleet-wide"}
         ],
         "finding_id": "shared-finding-42",
+        "clears_when": null,
         "created": "2026-06-20"
     }"#;
     let original: serde_json::Value = serde_json::from_str(raw).unwrap();
