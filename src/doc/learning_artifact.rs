@@ -13,10 +13,17 @@ use super::model::{BodySection, BodySpec, BrainDocModel, IndexIntent};
 use super::slug::derive_slug;
 
 /// The `index.md` this model's [`BrainDocModel::index_intent`] registers
-/// into. Sketch-level: the learning corpus index path is not yet a landed
-/// contract, so this is a reasonable placeholder a real materializer task
-/// can repoint without changing this model's shape.
-const LEARNING_CORPUS_INDEX: &str = "docs/content/learning-corpus/index.md";
+/// into, and therefore — since `mev`'s materializer derives its target as
+/// `root/dirname(index_path)/link_target` and imposes no directory of its
+/// own — the directory every materialized `LearningArtifact` lands in.
+///
+/// Repointed 2026-09-03 from the sketch-level `docs/content/learning-corpus/`
+/// placeholder to the draft queue `EN.12.M` feeds, which is where the
+/// operator actually reads these. The placeholder's own doc comment invited
+/// exactly this ("a real materializer task can repoint without changing this
+/// model's shape"), and the move was free: the struct has no production
+/// constructor anywhere in the fleet, so nothing was writing to the old path.
+const LEARNING_CORPUS_INDEX: &str = "docs/content/drafts/index.md";
 
 /// The sentinel marker the digest body section renders under.
 const DIGEST_MARKER: &str = "digest";
@@ -256,6 +263,22 @@ mod tests {
             .find(|(k, _)| k == "entities")
             .map(|(_, v)| v.clone());
         assert_eq!(entities, Some(FrontmatterValue::InlineList(vec![])));
+    }
+
+    #[test]
+    fn index_intent_targets_the_draft_queue_directory() {
+        // `mev`'s materializer derives its write target as
+        // `root/dirname(index_path)/link_target`, so this const — not
+        // anything in mev — is what decides where a materialized
+        // LearningArtifact lands. engine-rs:EN.12.M's acceptance criteria
+        // name `docs/content/drafts/`; pin it so the directory cannot drift
+        // back to the retired `learning-corpus` placeholder unnoticed.
+        let intent = full().index_intent();
+        assert_eq!(intent.index_path, "docs/content/drafts/index.md");
+        assert_eq!(
+            std::path::Path::new(&intent.index_path).parent().unwrap(),
+            std::path::Path::new("docs/content/drafts"),
+        );
     }
 
     #[test]

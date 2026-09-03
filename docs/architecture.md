@@ -199,8 +199,10 @@ round-trips a fixture — not a field-by-field contract the way `Opportunity` is
 - `LearningArtifactError::MissingField(&'static str)`.
 - `from_payload(&serde_json::Value)` — consumed leniently (missing fields default to empty
   string/list rather than erroring).
-- Registers into `docs/content/learning-corpus/index.md` (`LEARNING_CORPUS_INDEX` — a
-  placeholder path; that corpus index is not yet a landed contract).
+- Registers into `docs/content/drafts/index.md` (`LEARNING_CORPUS_INDEX`). Because `mev`'s
+  materializer derives its target as `root/dirname(index_path)/link_target`, this const is what
+  decides the directory every materialized `LearningArtifact` lands in. Repointed 2026-09-03 from
+  the `docs/content/learning-corpus/` placeholder to the draft queue `engine-rs:EN.12.M` feeds.
 
 ### `proposal` — the `Proposal` sketch model
 
