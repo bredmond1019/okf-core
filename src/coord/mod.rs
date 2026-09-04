@@ -13,13 +13,18 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod disposal;
+pub mod drain_log;
 pub mod escalation;
 pub mod heartbeat;
 pub mod lease;
 pub mod message;
 pub mod registry;
 pub mod slot;
+pub mod sweep_snapshot;
 
+pub use disposal::{Disposal, DisposalBreadth, DisposalFile, DisposalRoute, DisposalRow};
+pub use drain_log::{DrainLog, DrainLogEntry};
 pub use escalation::{Escalation, EscalationDurableHome, EscalationRecord};
 pub use heartbeat::{HeartbeatRecord, HeartbeatValue};
 pub use lease::{Lease, LeaseKind, LeaseRecord, LeaseScope};
@@ -29,6 +34,10 @@ pub use message::{
 };
 pub use registry::{Registry, RegistryClaim};
 pub use slot::{PidSource, Slot, SlotRecord};
+pub use sweep_snapshot::{
+    SweepDiscovery, SweepLane, SweepRunRecord, SweepRunRecordEntry, SweepSnapshot,
+    SweepSnapshotRecord,
+};
 
 /// Staleness threshold for a coordination record, in seconds (5400s / 90 minutes).
 ///

@@ -1,0 +1,89 @@
+{
+  "ts_utc": "2026-08-28T01:30:33Z",
+  "roadmap": "autonomous-foundation",
+  "git_sha": "87268fc5",
+  "discovery": {
+    "roadmap": "autonomous-foundation",
+    "roadmap_dir": "/Users/brandon/Dev/agentic-portfolio/planning/roadmaps/autonomous-foundation",
+    "lanes": {
+      "base-template": {
+        "repo": "base-template",
+        "blocks": [
+          {
+            "block": "BT.5.A",
+            "status": "closed",
+            "note": "lane.schema.json + check_lane_records.py + 18-case fixture suite + 2 gating checks + D71 (renumbered from D69). Review PASS, PR #6 squash-merged.",
+            "ts": "2026-08-20T19:45:00Z",
+            "spec_slug": null,
+            "sdlc_state": null
+          },
+          {
+            "block": "BT.ticket.sdlc-task-resume-truncates-run-state",
+            "status": "closed",
+            "note": "sdlc-task.js --resume now seeds state.tasks from the prior state file (tasksJson, parity with sdlc-flow.js); tasks_run stays per-invocation, documented. New gating check resume-task-state-merge-tests. Bailed once on an unrelated red gate, fixed at source, resumed 3/3.",
+            "ts": "2026-08-20T20:05:00Z",
+            "spec_slug": "ticket-sdlc-task-resume-truncates-run-state",
+            "sdlc_state": null
+          }
+        ],
+        "run_record": {
+          "notes": {
+            "path": "/Users/brandon/Dev/agentic-portfolio/_planning/base-template/orchestration-run/autonomous-foundation/notes.md",
+            "lifecycle": "active",
+            "run_started": "2026-08-20",
+            "run_ended": "",
+            "open_count": 1,
+            "held_count": 5
+          },
+          "review": {
+            "path": "/Users/brandon/Dev/agentic-portfolio/_planning/base-template/orchestration-run/autonomous-foundation/review.md",
+            "lifecycle": "active",
+            "run_started": "2026-08-20",
+            "run_ended": "2026-08-24",
+            "open_count": 0,
+            "held_count": 0
+          }
+        }
+      },
+      "okf-core": {
+        "repo": "okf-core",
+        "blocks": [
+          {
+            "block": "OK.ticket.op-slug-stutter-warning",
+            "status": "closed",
+            "note": "D76 op-slug surface in okf-core: op_id/op_slug_stutters/normalize_op_slug + W_STATE_OP_SLUG_STUTTER + inherent methods on OperatorDep/ApprovalDep. 6/6 tasks, all 5 gates green, both shown-failing controls executed. Wire shape unmoved. ff-merged 2509fd2. FOUND: check_block_records.py OPERATOR_SLUG_RE hard-errors on a slug WITHOUT the operator- prefix \u2014 inverse of D76, 20 copies fleet-wide, owner base-template.",
+            "ts": "2026-08-20T23:45:00Z",
+            "spec_slug": "ticket-op-slug-stutter-warning",
+            "sdlc_state": null
+          },
+          {
+            "block": "OK.4.A",
+            "status": "closed",
+            "note": "CarryoverArchiveRow (flatten over Carryover incl. its own extra catch-all) + DisposalReason (4 values, unknown REJECTED, deliberate contrast with CarryoverKind) + AmendsRef typed {slug,disposed_at}. 7/7 tasks, review PASS, all 5 gates green. Both shown-failing controls executed: deleting `withdrawn` reds at compile time; a renamed serde key reds the structural assertion with \"archive-level key disposed_at leaked into entry.extra\". Merged 89422ba. UNBLOCKS OK.4.B, then bastion BA.23.A.",
+            "ts": "2026-08-21T14:20:00Z",
+            "spec_slug": null,
+            "sdlc_state": null
+          }
+        ],
+        "run_record": {
+          "notes": {
+            "path": "/Users/brandon/Dev/agentic-portfolio/core/_planning/okf-core/orchestration-run/autonomous-foundation/notes.md",
+            "lifecycle": "lane-complete",
+            "run_started": "2026-08-20",
+            "run_ended": "2026-08-21",
+            "open_count": 0,
+            "held_count": 0
+          },
+          "review": {
+            "path": "/Users/brandon/Dev/agentic-portfolio/core/_planning/okf-core/orchestration-run/autonomous-foundation/review.md",
+            "lifecycle": "lane-complete",
+            "run_started": "2026-08-20",
+            "run_ended": "2026-08-21",
+            "open_count": 0,
+            "held_count": 0
+          }
+        }
+      }
+    }
+  }
+}

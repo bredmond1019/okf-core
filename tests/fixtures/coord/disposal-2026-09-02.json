@@ -1,0 +1,489 @@
+{
+  "analysis": "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md",
+  "generated": "2026-09-03T12:05:00Z",
+  "roadmaps": [
+    "context-handling-between-nodes",
+    "fleet-drift-detection",
+    "modeless-editor",
+    "storefront-and-proof",
+    "engine-comparison"
+  ],
+  "backfilled": true,
+  "backfill_note": "Written 2026-09-03, after the fact. The 2026-09-02 run executed the copy of /consolidate-fleet at ~/.claude/commands/, which was 4,163 bytes behind base-template's and did not carry Step 5's disposal.json section (added in base-template c1d0e13 / 638d6c6 at 15:08 and 15:12 -03, after that run). Rows are reconstructed from the analysis and from the eleven records as filed; payloads are what was ACTUALLY filed, not what would be filed today.",
+  "conventions": {
+    "ungrounded_excludes": [
+      "id",
+      "title",
+      "description",
+      "why",
+      "created",
+      "updated"
+    ],
+    "why": "These six required fields are mechanically derivable from the mechanism itself (id from the repo prefix + slug, title/description/why from the mechanism claim, timestamps from the clock). Listing them on all eleven rows would make ungrounded[] a constant and destroy its signal. `spec_dir` is NOT excluded: it is conventional but it encodes a directory the filer must choose, and it was wrong once.",
+    "needs_is_singular": "okf-core's field is a single enum. M4 and M6 were proposed in the analysis as 'docs + code' and 'code + docs'; each row records the dominant value and names the other half in rationale."
+  },
+  "rows": [
+    {
+      "finding_id": "gates-that-cannot-fail",
+      "mechanism": "M1",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P0",
+      "breadth": {
+        "repos": 7,
+        "instances": 17
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:54",
+        "core/_planning/jynx/orchestration-run/engine-comparison/notes.md",
+        "core/_planning/okf-core/orchestration-run/fleet-drift-detection/notes.md",
+        "core/_planning/bella/orchestration-run/modeless-editor/notes.md",
+        "_planning/learn-ai/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/bastion/orchestration-run/context-handling-between-nodes/notes.md",
+        "business/_planning/bastiel/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "gates-that-cannot-fail"
+        },
+        "id": "BT.ticket.gates-must-be-observed-red",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A check registered gates:true in harness.json must carry a recorded observed-red run.",
+        "files": {
+          "new": [
+            "scripts/check_observed_red.py",
+            "scripts/test_check_observed_red.py"
+          ],
+          "modified": [
+            ".claude/workflows/harness.schema.json",
+            "planning/harness.json"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files.new",
+        "acceptance_criteria",
+        "spec_dir"
+      ],
+      "rationale": "The analysis grounds the requirement in one sentence and seventeen instances; it grounds no implementation. Both new script paths were invented at filing, and 4 of 5 acceptance criteria were derived — AC2's '62 gated checks' came from counting the live harness.json, not from the analysis. The one grounded modified path is planning/harness.json, named in the bella fastCommand instance."
+    },
+    {
+      "finding_id": "engine-self-report-is-narrative-not-record",
+      "mechanism": "M2",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P0",
+      "breadth": {
+        "repos": 6,
+        "instances": 12
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:109",
+        "core/_planning/jynx/orchestration-run/engine-comparison/notes.md",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/bastion/orchestration-run/context-handling-between-nodes/notes.md",
+        "business/_planning/bastiel/orchestration-run/storefront-and-proof/notes.md",
+        "_planning/learn-ai/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "engine-self-report-is-narrative-not-record"
+        },
+        "id": "BT.ticket.engine-terminal-state-needs-evidence",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "flow",
+        "what": "Both engines must assert evidence before writing a terminal state.",
+        "files": {
+          "modified": [
+            ".claude/workflows/sdlc-task.js",
+            ".claude/workflows/sdlc-flow.js"
+          ],
+          "new": [
+            "scripts/test_terminal_state_evidence.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "acceptance_criteria",
+        "spec_dir",
+        "what"
+      ],
+      "rationale": "The highest-value ungrounded row. TWO of the analysis's twelve forms did not survive contact at filing: renderWorkAssertion ALREADY EXISTED in both engines (AC1), and the 'fabricated operator sign-off' — quoted as [verified] in the analysis — has NO code path in either engine (AC4, amended 2026-09-03 after a grep with a positive control). The mechanism is real; two of its cited instances were not the engine's. A twelve-form breadth count is not twelve groundable defects."
+    },
+    {
+      "finding_id": "emit-state-write-is-corpus-wide-and-unscoped",
+      "mechanism": "M3",
+      "route": "block",
+      "owner_repo": "mev",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 6,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:178",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/jynx/orchestration-run/engine-comparison/notes.md",
+        "core/_planning/bastion/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/okf-core/orchestration-run/fleet-drift-detection/notes.md",
+        "core/_planning/bastion-web/orchestration-run/storefront-and-proof/notes.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "emit-state-write-is-corpus-wide-and-unscoped"
+        },
+        "id": "MV.ticket.emit-state-write-is-corpus-wide-and-unscoped",
+        "repo": "mev",
+        "kind": "ticket",
+        "sdlc_workflow": "flow",
+        "what": "--scope must narrow the write, not only the plan; authored fields must round-trip byte-identically.",
+        "files": {
+          "modified": [
+            "src/brain/"
+          ],
+          "new": [
+            "tests/"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files",
+        "acceptance_criteria",
+        "spec_dir"
+      ],
+      "rationale": "files[] could name only DIRECTORIES (src/brain/, tests/) — the analysis proves the write is unscoped without ever naming the function that writes. The instances count is absent from the analysis heading, so breadth.instances is null rather than guessed. The quiesce half was split out at filing into a separate block the analysis did not propose."
+    },
+    {
+      "finding_id": "block-record-premises-are-never-re-derived",
+      "mechanism": "M4",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "docs",
+      "severity": "P1",
+      "breadth": {
+        "repos": 6,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:219",
+        "core/_planning/jynx/orchestration-run/engine-comparison/notes.md",
+        "core/_planning/bella/orchestration-run/modeless-editor/notes.md",
+        "_planning/learn-ai/orchestration-run/storefront-and-proof/notes.md",
+        "business/_planning/bastiel/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/bastion-web/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/mev/orchestration-run/fleet-drift-detection/notes.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "block-record-premises-are-never-re-derived"
+        },
+        "id": "BT.ticket.re-derive-block-premises-before-tasks",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A premise re-derivation step before task generation, with amendment-in-place as the recorded outcome.",
+        "files": {
+          "modified": [
+            ".claude/commands/begin-orchestration.md",
+            ".agents/skills/begin-orchestration/SKILL.md"
+          ],
+          "new": [
+            "scripts/test_premise_rederivation.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files.new",
+        "acceptance_criteria",
+        "spec_dir"
+      ],
+      "rationale": "The analysis proposed 'docs + code'; needs is a single enum, so this row records docs (the step is prose in two command copies) and the code half is the fixture that gates it. The .agents/ mirror was NOT named by the analysis — it was added at filing because scripts/test_step2_reverify_rules.py exists precisely because the two copies drift."
+    },
+    {
+      "finding_id": "registration-is-two-clauses",
+      "mechanism": "M5",
+      "route": "block",
+      "owner_repo": "mev",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 4,
+        "instances": 2
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:261",
+        "business/_planning/bastiel/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/bastion-web/orchestration-run/storefront-and-proof/notes.md",
+        "core/_planning/mev/orchestration-run/fleet-drift-detection/notes.md",
+        "core/_planning/okf-core/orchestration-run/fleet-drift-detection/notes.md",
+        "planning/carryover-triage-2026-09-02/index.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "registration-is-two-clauses"
+        },
+        "id": "MV.ticket.lane-file-registration-two-clauses",
+        "repo": "mev",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "Join both registration clauses per lane-named block and report which clause failed.",
+        "files": {
+          "modified": [
+            "src/brain/lane_segments.rs",
+            "src/brain/availability.rs"
+          ],
+          "new": [
+            "tests/"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files.new",
+        "spec_dir"
+      ],
+      "rationale": "The best-grounded row in the set: the two modified Rust paths were readable from the analysis's instances, and AC2 names the four live instances (BL.8.A / BL.6.D / BL.4.A / BW.6.F) the analysis measured, so acceptance_criteria is NOT ungrounded here. Only the test fixture path had to be invented. breadth 'four MORE repos' is a delta on a prior instance, not an absolute — recorded as 4."
+    },
+    {
+      "finding_id": "engines-cannot-express-a-red-green-task",
+      "mechanism": "M6",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 2,
+        "instances": 4
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:288",
+        "core/_planning/bella/orchestration-run/modeless-editor/notes.md",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "engines-cannot-express-a-red-green-task"
+        },
+        "id": "BT.ticket.engines-cannot-express-a-red-green-task",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A task-boundary rule for a detector tightened ahead of the task that regenerates what it detects.",
+        "files": {
+          "modified": [
+            "scripts/check_task_gate_boundaries.py",
+            "scripts/test_check_task_gate_boundaries.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "acceptance_criteria",
+        "spec_dir"
+      ],
+      "rationale": "Both file paths were groundable because the analysis named the existing checker. The analysis proposed 'code + docs'; the docs half (generate-tasks step 6's rationale) was verified ALREADY non-compiler-specific at filing and moved to out_of_scope. What no evidence could support: whether the new rule can fire at all — it shipped inert, 0 of 66 checks qualifying, which the 2026-09-03 pass records as an M20 instance."
+    },
+    {
+      "finding_id": "public-ci-cannot-see-the-private-vault",
+      "mechanism": "M7",
+      "route": "carryover",
+      "owner_repo": "base-template",
+      "needs": "docs",
+      "severity": "P1",
+      "breadth": {
+        "repos": 2,
+        "instances": 3
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:321",
+        "_planning/learn-ai/orchestration-run/storefront-and-proof/notes.md",
+        "business/_planning/bastiel/orchestration-run/storefront-and-proof/notes.md",
+        ".claude/skills/fleet-push-discipline/SKILL.md"
+      ],
+      "payload": {
+        "container": "carryover",
+        "repo": "base-template",
+        "slug": "public-ci-cannot-see-the-private-vault",
+        "finding_id": "public-ci-cannot-see-the-private-vault",
+        "kind": "defect",
+        "needs": "docs"
+      },
+      "ungrounded": [
+        "clears_when",
+        "the second and third repos' entries"
+      ],
+      "rationale": "Route carryover, not block, so block.schema.json does not apply and payload carries the carryover shape instead. The analysis proposed entries 'under one shared finding_id' across the repos that hit it; ONE entry exists, in base-template. The 3 instances span 2 repos and only one got an entry, so the shared id joins nothing — which is M9's mechanism reproducing inside M7's own disposal."
+    },
+    {
+      "finding_id": "carryover-pool-is-undescribed-not-blocked",
+      "mechanism": "M8",
+      "route": "none",
+      "owner_repo": "mev",
+      "needs": "code",
+      "severity": "P2",
+      "breadth": {
+        "repos": 19,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:343",
+        "planning/carryover-triage-2026-09-02/index.md",
+        "planning/carryover-triage-2026-09-02b/index.md"
+      ],
+      "payload": {},
+      "ungrounded": [],
+      "rationale": "Filed NOTHING, deliberately. The analysis's own disposal said 'nothing new — a mev warning on a prose-only clears_when is the candidate', and triage round 4 then moved the number by hand instead: needs coverage 3.0% -> 100%, machine-checkable 28.4% -> 60.2%. ungrounded[] is empty because there is no payload to ground, not because the evidence was complete. This row exists so the absence reads as a decision."
+    },
+    {
+      "finding_id": "finding-id-is-minted-where-it-cannot-cluster",
+      "mechanism": "M9",
+      "route": "operator",
+      "owner_repo": "brain",
+      "needs": "dedupe",
+      "severity": "P1",
+      "breadth": {
+        "repos": 19,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:385",
+        "core/_planning/jynx/orchestration-run/engine-comparison/notes.md",
+        "mev carryover --json --allow-exec"
+      ],
+      "payload": {},
+      "ungrounded": [
+        "everything — an operator adjudication has no filable payload",
+        "which of the 100 cross-repo suggestions are true merges"
+      ],
+      "rationale": "Route operator by construction: a false merge destroys durable knowledge the way a false cleared does, and no agent may author a shared id alone. Nothing was filed and nothing should have been. The number has since moved without an operator pass (30 -> 57 ids, 0 -> 2 cross-repo clusters as of 2026-09-03), both clusters minted by triage round 4 rather than by a lane."
+    },
+    {
+      "finding_id": "exclusive-lease-quiesces-the-fleet",
+      "mechanism": "M10",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "docs",
+      "severity": "P1",
+      "breadth": {
+        "repos": 5,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:439",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/bastion/orchestration-run/context-handling-between-nodes/notes.md",
+        "core/_planning/okf-core/orchestration-run/fleet-drift-detection/notes.md",
+        "core/_planning/bastion-web/orchestration-run/storefront-and-proof/notes.md",
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-autonomous-foundation-2026-08-25.md"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "exclusive-lease-quiesces-the-fleet"
+        },
+        "id": "BT.ticket.begin-orchestration-lease-steps-are-wrong",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "Correct Steps 3 and 4 on all three counts and document --agent as the self-exemption.",
+        "files": {
+          "modified": [
+            ".claude/commands/begin-orchestration.md",
+            ".agents/skills/begin-orchestration/SKILL.md"
+          ],
+          "new": [
+            "scripts/test_lease_steps_contract.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files.new",
+        "acceptance_criteria",
+        "spec_dir",
+        "the third of the 'three counts' — the analysis names two"
+      ],
+      "rationale": "The analysis says Steps 3/4 are 'wrong on three counts' and enumerates two; the third (absent-scope semantics) was derived at filing by reading mev/src/brain/lease.rs:17. AC2 required RUNNING the refusal against a disposable fixture lock to learn the exact remedy string — the analysis quoted no message text. A docs block whose acceptance criteria could only be written after executing the thing being documented."
+    },
+    {
+      "finding_id": "roadmap-is-not-a-run",
+      "mechanism": "M11",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P2",
+      "breadth": {
+        "repos": 1,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:469",
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-02.md:602",
+        "base-template/.claude/commands/consolidate-fleet.md",
+        "base-template/scripts/lane_log_watermark.py"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "roadmap-is-not-a-run"
+        },
+        "id": "BT.ticket.consolidate-fleet-since-filter",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A --since selection filter, plus the watermark verify output case and the docstring self-reports that rot.",
+        "files": {
+          "modified": [
+            ".claude/commands/consolidate-fleet.md",
+            "scripts/lane_log_watermark.py"
+          ],
+          "new": [
+            "scripts/test_consolidate_fleet_since.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files.new",
+        "spec_dir"
+      ],
+      "rationale": "Structural, not a defect in any repo's product — breadth.repos is 1 because the mechanism lives in this command. Best-grounded acceptance criteria in the set: the analysis's own 'where the command did not survive contact' section named the four cases verbatim, so ACs 2-5 were read, not derived. AC1's fixture suite was invented. Landed as documentation only: --since works in the command and lane_log_watermark.py still has no --since flag (2026-09-03 instrument #5)."
+    }
+  ]
+}

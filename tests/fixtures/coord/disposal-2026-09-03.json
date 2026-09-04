@@ -1,0 +1,551 @@
+{
+  "analysis": "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md",
+  "generated": "2026-09-03T12:40:00Z",
+  "roadmaps": [
+    "context-handling-between-nodes",
+    "runs-that-can-be-believed",
+    "jynx-orchestration-smoke"
+  ],
+  "backfilled": false,
+  "conventions": {
+    "ungrounded_excludes": [
+      "id",
+      "title",
+      "description",
+      "why",
+      "created",
+      "updated"
+    ],
+    "note": "`id` is excluded by the convention, but several rows list it anyway: where no block record exists yet the id is a NAMING decision (which repo prefix, ticket vs chore) the evidence does not make, not a mechanical derivation. Listing it there is the honest call.",
+    "needs_is_singular": "No row this pass needed a pair; the 2026-09-02 file had two."
+  },
+  "reconciliation_note": "Six of these mechanisms already have carryover entries filed by the lanes that hit them. Two (M16, M19) adopt the lane's existing finding_id, correcting an id this analysis minted in parallel. M20's two lane entries carry two different ids for one mechanism and M18's three entries across three repos carry none at all. NOTHING IS MERGED HERE — Step 4's never-auto-merge rule holds, and the `already_filed` field on a row is the input to an operator adjudication, not its outcome.",
+  "rows": [
+    {
+      "finding_id": "path-dependency-neighbour-is-a-shared-tree-hazard",
+      "mechanism": "M12",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P0",
+      "breadth": {
+        "repos": 4,
+        "instances": 6
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:93",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:959-979",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1032-1090",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:291-300",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:355-360",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:464-479"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "path-dependency-neighbour-is-a-shared-tree-hazard"
+        },
+        "id": "BT.ticket.isolation-must-account-for-path-dependency-neighbours",
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "spec_dir": "planning/BT.ticket.isolation-must-account-for-path-dependency-neighbours/",
+        "what": "Extend the isolation table with a path-dependency-neighbour row in both directions, stating that --worktree mitigates neither.",
+        "files": {
+          "modified": [
+            ".claude/commands/begin-orchestration.md",
+            ".claude/skills/run-the-gates/SKILL.md"
+          ],
+          "new": []
+        }
+      },
+      "already_filed": "BT.ticket.isolation-must-account-for-path-dependency-neighbours (by the engine-rs lane, mid-run)",
+      "ungrounded": [
+        "origin"
+      ],
+      "rationale": "The only row already filed, and filed by the lane that hit it rather than by this analysis — which is why it is also the best-grounded: files[], all five ACs and spec_dir were authored from the lane's own three measured control failures. The single ungrounded field is origin, absent because the mechanism variant post-dates the record; do not amend it, set it here."
+    },
+    {
+      "finding_id": "sdlc-engines-pass-no-agent-so-a-lane-may-be-quiescing-its-own-emit",
+      "mechanism": "M13",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P0",
+      "breadth": {
+        "repos": 3,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:120",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:671-678",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1177-1203",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:284-289"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "sdlc-engines-pass-no-agent-so-a-lane-may-be-quiescing-its-own-emit"
+        },
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "Both JS engines must pass --agent to mev, so a lane's bookkeep emit is not refused by its own exclusive lease.",
+        "files": {
+          "modified": [
+            ".claude/workflows/sdlc-task.js",
+            ".claude/workflows/sdlc-flow.js"
+          ]
+        }
+      },
+      "already_filed": "engine-rs carryover `sdlc-engines-pass-no-agent-so-a-lane-may-be-quiescing-its-own-emit` (P1, needs code, finding_id ABSENT); the Rust half landed as EN.ticket.emit-state-node-must-self-exempt-its-own-lease",
+      "ungrounded": [
+        "model",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "The one mechanism this run CONFIRMED BY EXECUTION (a full 2x2 matrix), so what/files/why are exactly grounded and sdlc_workflow is readable from the two-file scope. What is not: the acceptance criteria. The Rust fix's own anti-disablement test is the model — configure two identities, assert two argvs, watch it red against a wildcard — but transplanting that to JS is a design call no evidence in the record settles. NOTE the id collision: this row's finding_id is the engine-rs carryover's SLUG. That entry carries no finding_id, so adopting the slug as the id is safe here and is the reconciliation the operator should confirm."
+    },
+    {
+      "finding_id": "write-on-an-existing-path-is-destructive",
+      "mechanism": "M14",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 2,
+        "instances": 4
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:152",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:745-759",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1133-1156",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1353-1364",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:427-471"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "write-on-an-existing-path-is-destructive"
+        },
+        "repo": "base-template",
+        "kind": "ticket",
+        "what": "An authoring step that writes an existing tracked corpus path must diff-and-merge, not truncate."
+      },
+      "ungrounded": [
+        "model",
+        "sdlc_workflow",
+        "out_of_scope",
+        "files",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "Highest instance count with the thinnest payload, and the gap is real rather than laziness: all four instances are AGENT behaviour, not a code path. Nothing in the records names a file that would change. The remedy could be a harness check, a skill rule, or a hook, and the evidence does not choose. No carryover entry exists for it (positive-controlled against 'waiver', which returns the mev entry). This is the row where a filing agent must ask before filing."
+    },
+    {
+      "finding_id": "a-control-must-be-known-to-contain-the-thing",
+      "mechanism": "M15",
+      "route": "carryover",
+      "owner_repo": "base-template",
+      "needs": "docs",
+      "severity": "P1",
+      "breadth": {
+        "repos": 3,
+        "instances": 6
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:178",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:732-738",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:343-353",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:369-397",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1072-1090",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1133-1156",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:419-425",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:701-707"
+      ],
+      "payload": {
+        "container": "carryover",
+        "repo": "base-template",
+        "slug": "a-control-must-be-known-to-contain-the-thing",
+        "finding_id": "a-control-must-be-known-to-contain-the-thing",
+        "kind": "drift",
+        "needs": "docs"
+      },
+      "ungrounded": [
+        "clears_when",
+        "whether this should instead amend CLAUDE.md standing rule 11 directly"
+      ],
+      "rationale": "Route carryover, not block, because the remedy is one sentence added to an existing rule and a block is the wrong container for that. Two nearby jynx entries already exist and BOTH carry no finding_id — `an-agent-asserted-a-verified-negative-that-was-false` and `an-engine-pass-is-a-statement-about-fixtures-not-about-the-world`. They are candidates for this shared id and MUST NOT be merged automatically; the operator authors the join. A prose clears_when is the honest form here and it will not be machine-checkable."
+    },
+    {
+      "finding_id": "rule-10-snapshot-refresh-2026-09-03",
+      "mechanism": "M16",
+      "route": "carryover",
+      "owner_repo": "base-template",
+      "needs": "docs",
+      "severity": "P1",
+      "breadth": {
+        "repos": 1,
+        "instances": 1
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:203",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:846-874",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:634-652"
+      ],
+      "payload": {
+        "container": "carryover",
+        "repo": "base-template",
+        "slug": "engine-snapshot-refresh-is-not-per-session",
+        "finding_id": "rule-10-snapshot-refresh-2026-09-03",
+        "kind": "drift",
+        "needs": "docs"
+      },
+      "already_filed": "base-template carryover `engine-snapshot-refresh-is-not-per-session`, finding_id `rule-10-snapshot-refresh-2026-09-03`, filed by the lane 0d ago",
+      "ungrounded": [
+        "the three downstream documents"
+      ],
+      "rationale": "ID RECONCILED: the analysis minted `engine-snapshot-refresh-is-not-per-session`, which is the lane's SLUG; the lane's actual finding_id is `rule-10-snapshot-refresh-2026-09-03`, and this row adopts it. Minting a second id for a finding already carrying one is M21's own mechanism, committed by the analysis that named it. Ungrounded: the carryover covers base-template standing rule 10, but the correction also has to reach HQ CLAUDE.md and the stop-or-continue skill, and no evidence in the record establishes who owns those two edits."
+    },
+    {
+      "finding_id": "a-malformed-field-buries-its-own-error-code",
+      "mechanism": "M17",
+      "route": "block",
+      "owner_repo": "mev",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 2,
+        "instances": 2
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:228",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1119-1131",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:315-326"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "a-malformed-field-buries-its-own-error-code"
+        },
+        "repo": "mev",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A parse error prints before, and suppresses, the cascade it causes.",
+        "files": {
+          "modified": [
+            "src/brain/"
+          ]
+        }
+      },
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "files",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "Two independent lanes, same night, same 400:1 shape (479 errors from one field; 359 from another) — so breadth and severity are exact and the remedy is obvious in words. files[] can name only a directory: neither record names the reporting function, because both lanes found the cause by DELETING their bad field, not by reading the reporter. The cheapest row in the set to fix and the one whose acceptance criteria most need a human to write."
+    },
+    {
+      "finding_id": "run-record-lifecycle-stamp-is-half-written",
+      "mechanism": "M18",
+      "route": "block",
+      "owner_repo": "mev",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 3,
+        "instances": 3
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:250",
+        "mev carryover: mev/run-record-lifecycle-pair-can-disagree-unchecked (finding_id ABSENT)",
+        "mev carryover: base-template/run-record-lifecycle-active-holds-every-future-lane (finding_id ABSENT)",
+        "mev carryover: engine-rs/d57-checker-cannot-see-new-work-on-a-consolidated-record (finding_id ABSENT)",
+        "census: 115 vault records -> 43 consolidated / 18 consolidated_by / 16 both"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "run-record-lifecycle-stamp-is-half-written"
+        },
+        "repo": "mev",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "Check the notes.md/review.md pair for lifecycle agreement and reject a half-written stamp; write lifecycle and consolidated_by atomically.",
+        "files": {
+          "modified": [
+            "src/brain/lane_segments.rs",
+            "tests/test_orchestration_run_contract.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "files",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "THE HIGHEST-VALUE ROW IN THE FILE, and not for the block. Three carryover entries in THREE repos describe one mechanism and ALL THREE carry no finding_id — this is precisely the cross-repo cluster the fleet has been missing, visible only from this vantage point (M21). Filing the block matters less than attaching this shared id to those three entries. The census is exact; the Rust path is a guess from mev's own carryover text and the test path is invented."
+    },
+    {
+      "finding_id": "consumer-gate-waiver-unreachable-2026-09-03",
+      "mechanism": "M19",
+      "route": "block",
+      "owner_repo": "mev",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 2,
+        "instances": 3
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:281",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:489-500",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:502-506",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:663-674",
+        "core/_planning/engine-rs/orchestration-run/context-handling-between-nodes/notes.md:1236-1250"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "consumer-gate-waiver-unreachable-2026-09-03"
+        },
+        "repo": "mev",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A waiver must be adjudicated before the wrapper aborts; a waived repo must have a live lane; the three abort conditions must be distinguishable.",
+        "files": {
+          "modified": [
+            "scripts/check_consumers.sh"
+          ]
+        }
+      },
+      "already_filed": "mev carryover `consumer-gate-waiver-can-never-apply-to-a-broken-consumer`, finding_id `consumer-gate-waiver-unreachable-2026-09-03`, 0d",
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "ID RECONCILED, same error as M16: the analysis minted the lane's slug as a finding_id while the lane's real id is `consumer-gate-waiver-unreachable-2026-09-03`. Adopted. files[] is exact — both lanes name the same file and mev names the function — and the three failure modes are separately evidenced, so this is the most filable of the mev rows. okf-core's `consumer-gate-has-no-live-broken-positive-control` is a fourth candidate for the same id; operator's call, not merged here."
+    },
+    {
+      "finding_id": "gates-that-cannot-fail",
+      "mechanism": "M20",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 3,
+        "instances": 4
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:303",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:325-342",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:814-836",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/notes.md:105-155",
+        "core/_planning/mev/orchestration-run/context-handling-between-nodes/notes.md:597-603"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "gates-that-cannot-fail"
+        },
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "A gates:true check whose trigger set is empty against the live corpus must warn."
+      },
+      "already_filed": "base-template carryover `node-check-blind-after-top-level-export` (fid node-check-export-blindness-2026-09-03) and `rule-3-cannot-fire-in-this-repo` (fid rule-3-inert-in-base-template-2026-09-03) — two DIFFERENT ids for what this analysis clusters as one mechanism",
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "files",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "Reuses the 2026-09-02 finding_id deliberately — this is M1's second instance, not a new mechanism. The reverse id problem from M18: the lanes SPLIT into two ids what the analysis JOINS, so the operator must decide whether `gates-that-cannot-fail` subsumes both or whether observability-of-triggers is a distinct mechanism. Not merged. The generalisable remedy (warn on an empty trigger set) is grounded by rule 3 shipping inert at 0 of 66 on the day the observed-red requirement landed; no file implements it yet."
+    },
+    {
+      "finding_id": "finding-id-is-minted-where-it-cannot-cluster",
+      "mechanism": "M21",
+      "route": "operator",
+      "owner_repo": "brain",
+      "needs": "dedupe",
+      "severity": "P2",
+      "breadth": {
+        "repos": 19,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:326",
+        "mev carryover --json --allow-exec: 57/234 ids, 42 clusters, 2 cross-repo, 61 cross-repo suggestions"
+      ],
+      "payload": {},
+      "ungrounded": [
+        "everything — an adjudication has no filable payload",
+        "which of the 61 cross-repo suggestions are true merges"
+      ],
+      "rationale": "Route operator, unchanged from the 2026-09-02 row, and the number finally moved (0 -> 2 cross-repo clusters). THIS FILE IS EVIDENCE AGAINST ITS OWN ANALYSIS: two of the ten mechanisms (M16, M19) minted a second finding_id for a finding that already carried one, and M18 found three entries across three repos with none. The mechanism is not that ids are unwritten; it is that nothing reconciles an analysis's ids with the lanes' at the moment of writing. Cheapest fix: a consolidation pass must diff its minted ids against `mev carryover` before writing them, which the 2026-09-03 pass did not do."
+    },
+    {
+      "finding_id": "watermark-status-exits-for-the-fleet-on-one-ambiguity",
+      "mechanism": "I1",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 1,
+        "instances": 1
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:351",
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:357",
+        "base-template/scripts/lane_log_watermark.py:100-110",
+        "python3 base-template/scripts/lane_log_watermark.py status --root . -> SystemExit"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "watermark-status-exits-for-the-fleet-on-one-ambiguity"
+        },
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "roadmap_dir must report the ambiguous slug and continue, as the DRIFTED path already does, rather than SystemExit for every roadmap.",
+        "files": {
+          "modified": [
+            "scripts/lane_log_watermark.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "An instrument failure promoted to a mechanism row because it is guaranteed to recur: /assess->/seams->/sequence writes planning/<slug>/ by design and /generate-roadmap writes planning/roadmaps/<slug>/ by design, so any roadmap through the full pre-plan path trips it. The file and function are exact; the fix shape is a one-line policy change with an obvious fixture, but the AC must decide whether a per-slug --roadmap call should also warn, and no evidence settles that."
+    },
+    {
+      "finding_id": "since-is-a-document-not-a-tool",
+      "mechanism": "I5",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P2",
+      "breadth": {
+        "repos": 1,
+        "instances": 1
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:351",
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:365",
+        "grep -n since base-template/scripts/lane_log_watermark.py -> no flag",
+        "planning/roadmaps/runs-that-can-be-believed/lane-log.jsonl:7"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "since-is-a-document-not-a-tool"
+        },
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "lane_log_watermark.py gains a real --since, so selection is reproducible instead of hand-derived each run.",
+        "files": {
+          "modified": [
+            "scripts/lane_log_watermark.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "acceptance_criteria",
+        "spec_dir",
+        "id"
+      ],
+      "rationale": "Records that BT.ticket.consolidate-fleet-since-filter closed the DOCUMENTATION half of the 2026-09-02 M11 and left the tooling half open — the selection for this very run was done by hand. Filed as its own row rather than as a reopen, because the closed block's acceptance criteria were met exactly as written; the gap is that they only ever covered the command file."
+    },
+    {
+      "finding_id": "global-command-install-is-not-a-propagation-target",
+      "mechanism": "I6",
+      "route": "chore",
+      "owner_repo": "brain",
+      "needs": "operator",
+      "severity": "P2",
+      "breadth": {
+        "repos": 1,
+        "instances": 1
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:351",
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:367",
+        "wc -c: ~/.claude/commands/consolidate-fleet.md 19710 vs base-template 23873",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/review.md:195-200"
+      ],
+      "payload": {},
+      "ungrounded": [
+        "whether ~/.claude/commands/ should become a sync_downstream_harness.py target, or stay operator-run"
+      ],
+      "rationale": "Route chore and needs operator, because the immediate act is running /sync-global-commands and the durable question is a policy one. Concrete cost measured this session: the 2026-09-03 run executed a copy 4,163 bytes behind base-template's, which did not carry Step 5's disposal.json section at all — this file exists because the operator noticed, not because the command asked for it. RESOLVED IN PART 2026-09-03: the global copy was re-synced by hand after the Step 5 edit; the policy question stands."
+    },
+    {
+      "finding_id": "observed-red-requirement-reached-one-repo-of-nineteen",
+      "mechanism": "M1-gap",
+      "route": "block",
+      "owner_repo": "base-template",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": {
+        "repos": 18,
+        "instances": null
+      },
+      "evidence": [
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:56",
+        "planning/open-work/orchestration-runs/retros/pattern-analysis-2026-09-03.md:84",
+        "_planning/base-template/orchestration-run/runs-that-can-be-believed/review.md:195-200",
+        "harness census: base-template 67/67 gated checks carry observed_red; every other harness.json 0; HQ 33 gated, 0"
+      ],
+      "payload": {
+        "origin": {
+          "type": "mechanism",
+          "slug": "observed-red-requirement-reached-one-repo-of-nineteen"
+        },
+        "repo": "base-template",
+        "kind": "ticket",
+        "sdlc_workflow": "task",
+        "what": "check_observed_red.py must reach the 18 repos whose harness.schema.json now accepts observed_red but whose harness.json requires it nowhere.",
+        "files": {
+          "modified": [
+            "scripts/sync_downstream_harness.py"
+          ]
+        }
+      },
+      "ungrounded": [
+        "sdlc_workflow",
+        "out_of_scope",
+        "files",
+        "acceptance_criteria",
+        "spec_dir",
+        "id",
+        "whether the backfill of hundreds of downstream checks is one block or per-repo work"
+      ],
+      "rationale": "Not one of the ten mechanisms — it is the measured shortfall in yesterday's M1 remediation, and it belongs in a disposal file because otherwise a reader concludes the fleet is gated on observed-red. It is not: one repo of nineteen is. The lane says the non-propagation was deliberate (sync_downstream_harness.py carries commands, workflows and hooks, never scripts/), so this row proposes changing that boundary, which is a design decision the evidence raises but does not make."
+    }
+  ]
+}
