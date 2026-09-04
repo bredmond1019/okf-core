@@ -487,6 +487,19 @@ reason `BlockedBy` puts it on the payload structs.
 Verified against the real corpus at the time, not only fixtures: all **51** `state.json` files in
 the fleet load with zero failures.
 
+`Backlog.clears_when` and `Backlog.ready_when` (`OK.ticket.backlog-lifecycle-predicates`,
+2026-09-03) reuse `ClearsWhen`/`ClearsWhenPredicate` **verbatim** — no new predicate vocabulary,
+no new match arms for mev's evaluator to grow. The two fields are opposite in meaning, not shape:
+`clears_when` says what would make a queued idea stop being worth doing (the same "obsoleted by
+something that already landed" case `Carryover.clears_when` names); `ready_when` says what would
+make it start being worth doing — a condition that, before this block, could only rot in prose (two
+of the entries retired in the 2026-09-03 backlog cut named their own trigger in the title because
+there was nowhere else to put it). Both are `Option<ClearsWhen>` with
+`#[serde(default, skip_serializing_if = "Option::is_none")]`, so every one of the corpus's ~45
+existing backlog entries keeps round-tripping byte-for-byte with neither key added. As with every
+other okf-core predicate field, **this crate defines the shape only and never evaluates either
+one** (`AGENTS.md` rule 3) — evaluation is mev's `MV.ticket.backlog-sweep-verb`.
+
 `BlockedBy`, by contrast, *is* a bare enum, and that is a deliberate trade — a dangling dependency
 edge should be loud. The cost is on record: adding two variants to it broke every exhaustive match
 downstream.

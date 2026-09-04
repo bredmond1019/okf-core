@@ -17,9 +17,9 @@
 // surface only (`okf_core::StateFile` etc.), same posture as `tests/schema_conformance.rs`.
 
 use okf_core::{
-    ApprovalDep, BlockDep, BlockedBy, Carryover, CarryoverKind, CarryoverNeeds, ClearsWhen,
-    ClearsWhenPredicate, ExternalDep, KnownCarryoverKind, KnownCarryoverNeeds, OperatorDep,
-    StateFile, StateLoadError, TrackBlock, load_state,
+    ApprovalDep, Backlog, BlockDep, BlockedBy, Carryover, CarryoverKind, CarryoverNeeds,
+    ClearsWhen, ClearsWhenPredicate, ExternalDep, KnownCarryoverKind, KnownCarryoverNeeds,
+    OperatorDep, StateFile, StateLoadError, TrackBlock, load_state,
 };
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
@@ -1187,4 +1187,173 @@ fn carryover_needs_known_value_is_not_unknown_variant() {
     let needs: CarryoverNeeds = serde_json::from_str("\"code\"").unwrap();
     assert_eq!(needs, CarryoverNeeds::Known(KnownCarryoverNeeds::Code));
     assert_ne!(needs, CarryoverNeeds::Unknown("code".to_string()));
+}
+
+// ---------------------------------------------------------------------------
+// `backlog[].clears_when` / `backlog[].ready_when` — the two lifecycle
+// predicates added in `OK.ticket.backlog-lifecycle-predicates` (task 2).
+// Both reuse `ClearsWhen`/`ClearsWhenPredicate` verbatim (task 1); these
+// tests prove the round-trip and back-compat properties end-to-end on the
+// `Backlog` struct itself, at the level a real `state.json` would be read.
+// ---------------------------------------------------------------------------
+
+/// A real backlog entry shape (no `clears_when`/`ready_when` present, as
+/// every entry in the corpus predates this block) round-trips byte-for-byte
+/// AND — the load-bearing assertion — emits NEITHER key on re-serialize.
+/// `skip_serializing_if` is what is under test here: a naive equality check
+/// on a re-parsed value would still pass even if the field serialized as an
+/// explicit `null`, silently adding a key to every one of the corpus's ~45
+/// existing backlog entries on the next `emit-state --write`.
+#[test]
+fn backlog_entry_without_lifecycle_predicates_round_trips_and_emits_no_keys() {
+    let raw = r#"{
+        "slug": "learn-ai-long-form-navigation",
+        "title": "learn-ai: long-form posts have no navigation and one exit at 92% scroll depth",
+        "repo": "learn-ai",
+        "type": "improvement",
+        "status": "idea",
+        "depends_on": [],
+        "block": null,
+        "notes": "Sticky TOC in the empty left gutter.",
+        "origin": {
+            "type": "review",
+            "notes": "2026-08-08 live browser review"
+        },
+        "created": "2026-08-08"
+    }"#;
+
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let entry: Backlog = serde_json::from_str(raw).unwrap();
+    assert_eq!(entry.clears_when, None);
+    assert_eq!(entry.ready_when, None);
+
+    let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
+    assert_eq!(original, round);
+
+    let round_obj = round.as_object().unwrap();
+    assert!(
+        !round_obj.contains_key("clears_when"),
+        "clears_when must stay omitted from the output when None, got: {round:?}"
+    );
+    assert!(
+        !round_obj.contains_key("ready_when"),
+        "ready_when must stay omitted from the output when None, got: {round:?}"
+    );
+}
+
+/// `clears_when` round-trips for each of the four typed predicate kinds.
+#[test]
+fn backlog_clears_when_round_trips_for_each_typed_predicate() {
+    let cases = [
+        r#"{"type":"block_closed","repo":"base-template","id":"BT.ticket.compilable-task-boundaries"}"#,
+        r#"{"type":"file_exists","path":"docs/state/state-schema.md"}"#,
+        r#"{"type":"file_contains","path":"src/state.rs","pattern":"pub struct Backlog"}"#,
+        r#"{"type":"command_exits_zero","command":"cargo test --test state_preservation"}"#,
+    ];
+
+    for predicate_raw in cases {
+        let raw = format!(
+            r#"{{
+                "slug": "spike-extraction-plan-waits-on-a-named-trigger",
+                "title": "spike extraction plan waits on a named trigger",
+                "repo": "cross-repo",
+                "type": "research",
+                "status": "idea",
+                "depends_on": [],
+                "block": null,
+                "notes": null,
+                "clears_when": {predicate_raw}
+            }}"#
+        );
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let entry: Backlog = serde_json::from_str(&raw).unwrap();
+
+        let expected_predicate: ClearsWhen = serde_json::from_str(predicate_raw).unwrap();
+        assert_eq!(entry.clears_when, Some(expected_predicate));
+        assert_eq!(entry.ready_when, None);
+
+        let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
+        assert_eq!(original, round);
+    }
+}
+
+/// `ready_when` round-trips for each of the four typed predicate kinds — the
+/// same shape as `clears_when`, opposite meaning, checked independently so a
+/// copy-paste that wired both fields to the same predicate storage would be
+/// caught by an asymmetric fixture (see the "both fields at once" test
+/// below for that exact case).
+#[test]
+fn backlog_ready_when_round_trips_for_each_typed_predicate() {
+    let cases = [
+        r#"{"type":"block_closed","repo":"base-template","id":"BT.ticket.compilable-task-boundaries"}"#,
+        r#"{"type":"file_exists","path":"docs/state/state-schema.md"}"#,
+        r#"{"type":"file_contains","path":"src/state.rs","pattern":"pub struct Backlog"}"#,
+        r#"{"type":"command_exits_zero","command":"cargo test --test state_preservation"}"#,
+    ];
+
+    for predicate_raw in cases {
+        let raw = format!(
+            r#"{{
+                "slug": "eval-cloud-vs-local-comparison",
+                "title": "eval cloud vs local comparison",
+                "repo": "cross-repo",
+                "type": "research",
+                "status": "idea",
+                "depends_on": [],
+                "block": null,
+                "notes": null,
+                "ready_when": {predicate_raw}
+            }}"#
+        );
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let entry: Backlog = serde_json::from_str(&raw).unwrap();
+
+        let expected_predicate: ClearsWhen = serde_json::from_str(predicate_raw).unwrap();
+        assert_eq!(entry.ready_when, Some(expected_predicate));
+        assert_eq!(entry.clears_when, None);
+
+        let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
+        assert_eq!(original, round);
+    }
+}
+
+/// Both `clears_when` (prose) and `ready_when` (typed) on the same entry
+/// round-trip together, preserved distinctly — proves the two fields are
+/// backed by independent storage, not aliased to one another.
+#[test]
+fn backlog_entry_with_both_predicates_preserves_both_distinctly() {
+    let raw = r#"{
+        "slug": "example-both-predicates",
+        "title": "example entry carrying both lifecycle predicates",
+        "repo": "cross-repo",
+        "type": "chore",
+        "status": "idea",
+        "depends_on": [],
+        "block": null,
+        "notes": null,
+        "clears_when": "superseded once the parent block lands",
+        "ready_when": {"type":"block_closed","repo":"engine-rs","id":"EN.ticket.fleet-build-permit-wrapper"}
+    }"#;
+
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let entry: Backlog = serde_json::from_str(raw).unwrap();
+
+    assert_eq!(
+        entry.clears_when,
+        Some(ClearsWhen::Prose(
+            "superseded once the parent block lands".to_string()
+        ))
+    );
+    match &entry.ready_when {
+        Some(ClearsWhen::Predicate(ClearsWhenPredicate::BlockClosed { repo, id, note })) => {
+            assert_eq!(repo, "engine-rs");
+            assert_eq!(id, "EN.ticket.fleet-build-permit-wrapper");
+            assert_eq!(*note, None);
+        }
+        other => panic!("expected ready_when = Predicate(BlockClosed), got {other:?}"),
+    }
+    assert_ne!(entry.clears_when, entry.ready_when);
+
+    let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
+    assert_eq!(original, round);
 }
