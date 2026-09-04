@@ -17,6 +17,14 @@ use thiserror::Error;
 // ---------------------------------------------------------------------------
 
 /// Errors that can occur when loading a `planning/state.json` file.
+///
+/// Exhaustive, because the load path has exactly two failure modes today
+/// (`Io`, `Parse`) and 24 match-arm lines across mev/bastion/engine-rs
+/// (35 refs total) branch on which one occurred to choose user-facing
+/// messaging. A new failure mode belongs in that decision, not silently
+/// routed through a catch-all a `#[non_exhaustive]` attribute would force —
+/// the crate has never applied the attribute anywhere (measured
+/// 2026-09-03), and nothing here argues for starting on this type.
 #[derive(Debug, Error)]
 pub enum StateLoadError {
     /// The file could not be read from disk.
@@ -195,6 +203,27 @@ pub fn normalize_op_slug(slug: &str) -> &str {
 /// internal tagging, so the wire shape is unchanged; the payload structs
 /// carry the typeshare annotation instead of the enum, because typeshare
 /// rejects internally-tagged algebraic enums outright.
+///
+/// Exhaustive, because that is the costliest call this block makes: 184
+/// consumer refs and 78 match-arm lines across mev/bastion/engine-rs
+/// (measured 2026-09-03), and a `degrade` verdict here would force all 78
+/// into catch-alls in the same wave. Deserialization already rejects an
+/// unknown `type` loudly (no `#[serde(other)]`, see above) rather than
+/// degrading, so the compile-time contract stays consistent with the
+/// runtime one: a new dependency kind is a decision every match site must
+/// make, not a value that silently falls through. mev's own convention on
+/// the sibling [`StateEdgeKind`] is to write an explicit arm rather than a
+/// catch-all precisely so a new variant forces that decision; a
+/// `#[non_exhaustive]` verdict here would silently defeat that convention
+/// wherever it is followed on this type, which is not a cost this block
+/// takes on without a positive reason — and none of BlockedBy's four
+/// variants (block/external/operator/approval dependency) is expected to
+/// gain a new one casually. NOTE: mev additionally carries 12 unaudited
+/// wildcard (`_ =>`) arms in `state.rs`, 6 in `carryover.rs`, and 4 in
+/// `emit.rs` in files that also match `BlockedBy` — mev-bb (2026-09-03)
+/// explicitly declined to claim these are on `BlockedBy` itself. This
+/// verdict does not depend on mev being uniformly exhaustive on the type;
+/// it rests on the 78 arms actually measured, not on an audit of the rest.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BlockedBy {
@@ -224,6 +253,16 @@ pub enum BlockedBy {
 ///
 /// okf-core defines the SHAPE only and never evaluates it (AGENT.md rule 3);
 /// evaluation lives in mev.
+///
+/// Exhaustive, because it is `#[serde(untagged)]` with exactly two variants
+/// and an ordering contract (`Prose` first) already load-bearing for
+/// correct deserialization — `#[non_exhaustive]` addresses a different
+/// axis (match-site coverage in consumers) and has no established need
+/// here: mev's future backlog-sweep evaluator (`MV.ticket.backlog-sweep-verb`,
+/// not yet on disk as of this block) will match on this type, but a
+/// two-variant untagged enum whose whole discriminant is "is this prose or
+/// a predicate" gains nothing from a forced catch-all — a third variant
+/// would itself require an ordering decision no catch-all can make safely.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum ClearsWhen {
@@ -242,6 +281,17 @@ pub enum ClearsWhen {
 ///
 /// okf-core defines the SHAPE only and never evaluates it (AGENT.md rule 3);
 /// evaluation lives in mev.
+///
+/// Exhaustive, because it already rejects an unknown `type` loudly at parse
+/// time (no `#[serde(other)]`), so degrading match-site coverage would be
+/// inconsistent with the deserialization contract it already keeps — a new
+/// predicate kind should force every consumer to decide how to evaluate it,
+/// not fall through a catch-all. mev's future backlog-sweep evaluator
+/// (`MV.ticket.backlog-sweep-verb`) is a call site that does not exist on
+/// disk yet and so is not visible to `scripts/check_consumers.sh`; per this
+/// block's adoption notes, if that evaluator lands matching on this type it
+/// must be counted in the SAME wave as any future exhaustiveness change
+/// here, not audited after the fact.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClearsWhenPredicate {
@@ -749,6 +799,12 @@ pub struct CarryoverScope {
 /// the vocabulary and are handled by the `Unknown(String)` fallback on
 /// [`CarryoverKind`] until Block G migrates the ~131 live entries still
 /// using them.
+///
+/// Exhaustive, because it is the closed, fixed vocabulary itself — the
+/// wrapping [`CarryoverKind`] is what already degrades an unrecognized
+/// value (to `Unknown(String)`), so `#[non_exhaustive]` on this inner type
+/// would duplicate that degradation at a layer that exists specifically to
+/// be the exhaustive reference list a new addition must edit deliberately.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum KnownCarryoverKind {
@@ -776,6 +832,17 @@ pub enum KnownCarryoverKind {
 ///
 /// okf-core defines the SHAPE only and never validates or evaluates it
 /// (AGENT.md rule 3); the known-vocabulary check lives in mev.
+///
+/// Exhaustive at the Rust-match level (only `Known`/`Unknown`, and the
+/// `Unknown` catch-all already exists) — this type's whole design IS the
+/// runtime-degradation contract this block leaves out of scope: it solves
+/// the "unrecognized data on disk" problem via `#[serde(untagged)]` +
+/// `Unknown(String)`, which is orthogonal to `#[non_exhaustive]`'s
+/// compile-time match-site contract. `#[non_exhaustive]` here would add a
+/// second, redundant degradation mechanism on top of one that already
+/// exists for a different axis, with no consumer match site it would
+/// change (adding a third top-level variant is not anticipated; the fixed
+/// vocabulary itself lives one layer down in [`KnownCarryoverKind`]).
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum CarryoverKind {
@@ -800,6 +867,10 @@ impl Default for CarryoverKind {
 /// [`CarryoverNeeds`] wrapper) per [`BlockedBy`]'s documented rule at
 /// src/state.rs:196: typeshare cannot represent an untagged algebraic enum,
 /// so the payload type is annotated and the wrapper is not.
+/// Exhaustive, for the same reason as [`KnownCarryoverKind`]: it is the
+/// closed reference vocabulary the wrapping [`CarryoverNeeds`] already
+/// degrades unrecognized values against, so `#[non_exhaustive]` here would
+/// duplicate that degradation one layer too early.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "typeshare", typeshare::typeshare)]
@@ -826,6 +897,11 @@ pub enum KnownCarryoverNeeds {
 ///
 /// okf-core defines the SHAPE only and never validates or evaluates it
 /// (AGENT.md rule 3); the known-vocabulary check lives in mev.
+///
+/// Exhaustive, for the same reason as [`CarryoverKind`]: the
+/// `Unknown(String)` fallback already IS this type's runtime-degradation
+/// answer, orthogonal to `#[non_exhaustive]`'s compile-time contract, and
+/// there is no top-level variant expected to grow.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum CarryoverNeeds {
@@ -927,6 +1003,11 @@ pub struct Carryover {
 /// so a mistyped reason is not a fixable live value, it is a permanent line
 /// in a file nothing ever edits. Rejecting an unknown reason at parse time,
 /// loudly, is cheaper than a wrong row that outlives the mistake.
+/// Exhaustive, because the append-only archive it feeds already rejects an
+/// unrecognized reason loudly at parse time (no `#[serde(other)]`, no
+/// fallback — see above): a permanent record is exactly the case where a
+/// new disposal reason must be a deliberate vocabulary addition, not a
+/// value a `#[non_exhaustive]`-softened match quietly waves through.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "typeshare", typeshare::typeshare)]
@@ -1173,6 +1254,33 @@ pub struct StateSource {
 /// resolve to a node — it names a carryover (`"carryover:<repo>/<slug>"`),
 /// which is targetless in the same way an operator gate is, so consumers
 /// doing dangling, cycle, or topological work must skip it.
+///
+/// EXHAUSTIVE — settled, not open. This is the motivating case for this
+/// block: `CarryoverBlocks` broke mev and bastion at once in `OK.4.B`
+/// (2026-08-21) by failing an exhaustive match, and that break is the
+/// mechanism this type relies on going forward, not a defect to soften. In
+/// mev, `core/mev/src/brain/state.rs`'s edge-integrity loop matches this
+/// type with an explicit empty arm, `StateEdgeKind::CarryoverBlocks => {}`,
+/// carrying the comment: "Written as an explicit arm rather than a `_ =>`
+/// catch-all on purpose: the next variant okf-core adds must fail this
+/// match and force a decision here, which is exactly how this one
+/// surfaced." The arm does nothing at runtime; its entire purpose is to be
+/// a place a future variant fails to compile. `#[non_exhaustive]` would
+/// silently delete that mechanism: the match would keep compiling, the
+/// empty arm would keep doing nothing, and a new edge kind would be
+/// ignored by mev's graph-integrity checks with no diagnostic anywhere —
+/// strictly worse than the `OK.4.B` break, because that break was loud and
+/// this would be quiet.
+///
+/// This type ALSO derives `Serialize` only, with no `Deserialize` impl —
+/// it is a derived, emitted artifact (`build_state_graph`'s output), never
+/// read back from disk as this type. Consequently `#[serde(other)]` and an
+/// `Unknown(_)` fallback were never applicable to it in the first place:
+/// there is no deserialization path for this enum to degrade. The `OK.4.B`
+/// break was purely a Rust match-site break in consumers, and
+/// `#[non_exhaustive]` is not merely the right tool for that failure mode,
+/// it is the only tool that was ever on the table — and for the reason
+/// above, the right call is still not to use it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StateEdgeKind {

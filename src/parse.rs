@@ -16,6 +16,12 @@ pub struct Frontmatter {
 }
 
 /// Result of attempting to parse a frontmatter block.
+///
+/// Exhaustive, because the four outcomes are a closed classification of how
+/// frontmatter parsing can end, and consumers match on all four to decide
+/// what diagnostic to raise — a `#[non_exhaustive]` verdict would let a new
+/// failure mode fall through a catch-all instead of forcing the consumer to
+/// pick a diagnostic for it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseResult {
     /// Block found and fully parsed.

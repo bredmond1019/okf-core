@@ -40,6 +40,14 @@ pub trait BrainDocModel {
 }
 
 /// One section of a `BrainDocModel`'s body.
+///
+/// Exhaustive, because the renderer that turns a `Vec<BodySection>` into a
+/// document's body text (and mev's `splice_generated`, matching the
+/// byte-compatible shape) must account for every section kind to produce
+/// correct output — a `#[non_exhaustive]` verdict would let a third section
+/// kind silently render as nothing (or panic) wherever a match lacked a
+/// catch-all, rather than failing the build until the renderer is taught
+/// about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodySection {
     /// Free-form prose/markdown, emitted exactly as given.

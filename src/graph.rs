@@ -21,6 +21,14 @@ use serde::Serialize;
 /// The kind of a directed edge in the knowledge graph.
 ///
 /// `Related` is the only variant today, sourced from the `related:` frontmatter list.
+///
+/// Exhaustive, because it is a single-variant enum whose entire point is
+/// that consumers can rely on today's one edge origin (`related:`) being
+/// the only one — a `#[non_exhaustive]` verdict on a one-variant type
+/// forces a catch-all for a branch that cannot currently exist, buying
+/// nothing while making every consumer match look incomplete. The attribute
+/// appears nowhere in this crate today (measured 2026-09-03) and nothing
+/// about this type argues for starting here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
@@ -85,6 +93,13 @@ pub struct GraphArtifact {
 /// Produced by [`resolve_edge`] — the single source of truth for edge resolution,
 /// shared by mev's `check_graph` (diagnostics) and [`crate::graph_emit::build_graph_export`]
 /// (exported fields).
+///
+/// Exhaustive, because the three outcomes (`Resolved`/`LeafTarget`/
+/// `Dangling`) are a closed classification of what edge resolution can
+/// produce, and consumers (mev's diagnostics, the graph export) match on
+/// it to decide what to report — a `#[non_exhaustive]` verdict would let a
+/// fourth resolution outcome silently fall through a catch-all instead of
+/// forcing every consumer to decide how to classify it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EdgeResolution {
     /// The (qualified) `to_ref` resolves to a real node.

@@ -16,6 +16,13 @@ use crate::frontmatter::yaml_scalar;
 ///
 /// Entry order is explicit (`Vec`, never a `HashMap`) throughout, including within
 /// each `MapList` entry's field pairs, so serialized output is deterministic.
+///
+/// Exhaustive, because `serialize_nested_frontmatter` (and any consumer
+/// that renders a field) must produce correct YAML for every shape a value
+/// can take — a `#[non_exhaustive]` verdict would let a fifth shape
+/// silently fall through a catch-all as unrendered or malformed output
+/// instead of failing the build until the renderer and every consumer
+/// match are taught the new shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrontmatterValue {
     /// `key: value` — or a bare `key:` when the value is empty (the OKF
