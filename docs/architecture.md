@@ -572,6 +572,28 @@ Only `broken` (unwaived) fails the gate — the other three verdicts are explici
 that okf-core caused a problem, so a red gate for one of them is not automatically okf-core's bug;
 read the reported reason before assuming otherwise.
 
+### Coverage: the compiled-over-discovered summary, and strict-by-default
+
+A verdict array alone hides how much of the fan-out was actually exercised: `pass`/`broken` mean
+cargo really ran, but `skipped-dirty`/`lockfile-stale`/`not-evaluable` all mean it did not, and
+without an aggregate a reader has to notice that by eye. Every human run — including a fully clean
+one — ends with a summary line, `compiled N of M discovered`; when `N < M` it is followed by each
+uncompiled slug and its verdict. `--json`'s top level is likewise an object, not a bare array:
+`{"consumers": [...], "discovered": M, "compiled": N, "complete": true|false}` — the `consumers`
+element shape is byte-identical to the old bare array, and `complete` is `compiled == discovered`.
+(This is a deliberate breaking change to `--json`'s top level; re-verified before making it that no
+programmatic caller exists anywhere in the fleet.)
+
+The gate is **strict by default**: with no flags, an incomplete run (`compiled < discovered`) now
+exits non-zero in addition to an unwaived `broken` consumer or a stale waiver, naming every
+uncompiled slug. `--allow-incomplete` opts out of the incompleteness half of that check only — a
+skipped-dirty/lockfile-stale/not-evaluable consumer no longer fails the gate by itself, but a
+broken-and-unwaived consumer or a stale waiver still does. `planning/harness.json`'s
+`consumer-compile-gate` entry passes `--allow-incomplete`, because a sibling lane holding a dirty
+tree is the normal case in this fleet's four-lane concurrency, not a defect okf-core's own push
+gate can fail on — the flag is the gate's written admission of that blind spot, not a way to hide
+it.
+
 ### Waivers — how to add one, and why they self-delete
 
 `scripts/consumer-gate-waivers.txt` is the only sanctioned way to keep okf-core pushable while a
