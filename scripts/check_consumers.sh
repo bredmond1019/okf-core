@@ -589,6 +589,25 @@ gate_outcome_for() {
     return 0
 }
 
+# Did cargo actually run for this consumer, i.e. is its verdict evidence
+# about okf-core at all? `pass` and `broken` mean cargo really executed
+# against this consumer's tree; `skipped-dirty`, `lockfile-stale` and
+# `not-evaluable` all mean cargo's result (if it ran at all) is not
+# evidence about okf-core, per the header comment above and task 1's own
+# framing — none of those three counts as compiled. Kept as one helper
+# next to gate_outcome_for so the human report, --json and the strict path
+# added in later tasks cannot independently disagree about the count.
+verdict_is_compiled() { # verdict_is_compiled <verdict>
+    case "$1" in
+        pass|broken)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 # ---------------------------------------------------------------------------
 # Report rendering: human text and compact JSON, both over CONSUMER_SLUGS.
 # Both append every observed verdict to RESULT_VERDICTS so the caller can
@@ -606,10 +625,18 @@ json_escape() {
 
 print_report() {
     local i slug dir eline
+    local discovered=0 compiled=0
+    local -a uncompiled_lines=()
     for i in "${!CONSUMER_SLUGS[@]}"; do
         slug="${CONSUMER_SLUGS[$i]}"
         dir="${CONSUMER_DIRS[$i]}"
         run_and_classify_consumer "$slug" "$dir"
+        discovered=$((discovered + 1))
+        if verdict_is_compiled "$VERDICT"; then
+            compiled=$((compiled + 1))
+        else
+            uncompiled_lines+=("  $slug: $VERDICT")
+        fi
         if ! gate_outcome_for "$slug" "$VERDICT"; then
             ANY_GATE_FAILURE=1
         fi
@@ -627,6 +654,15 @@ print_report() {
         fi
         RESULT_VERDICTS+=("$VERDICT")
     done
+    # Summary line, printed on EVERY run (including a fully clean one) — a
+    # summary that appears only on partial runs is useless, since a reader
+    # cannot tell a complete run from a run that forgot to print.
+    echo "compiled $compiled of $discovered discovered"
+    if [ "$compiled" -lt "$discovered" ]; then
+        for eline in "${uncompiled_lines[@]}"; do
+            echo "$eline"
+        done
+    fi
 }
 
 print_json() {

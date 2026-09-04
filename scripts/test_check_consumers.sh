@@ -364,6 +364,23 @@ check "ANSI-wrapped error[E0308] still classifies broken" \
         && printf '%s' "$OUT" | grep -q '"code":"E0308"' && echo 0 || echo 1 )"
 
 # ---------------------------------------------------------------------------
+# Case 8: discovered-vs-compiled summary line (task 1).
+# ---------------------------------------------------------------------------
+
+reset_fixtures
+run_gate
+check "all-compiled: summary line reads 'compiled 3 of 3 discovered'" \
+    "$( [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -qx 'compiled 3 of 3 discovered' && echo 0 || echo 1 )"
+
+reset_fixtures
+set_git_dirty mev
+run_gate
+check "one-skipped: summary line reads 'compiled 2 of 3 discovered'" \
+    "$( [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -qx 'compiled 2 of 3 discovered' && echo 0 || echo 1 )"
+check "one-skipped: summary is followed by the uncompiled slug and its verdict" \
+    "$(printf '%s\n' "$OUT" | grep -qx '  mev: skipped-dirty' && echo 0 || echo 1)"
+
+# ---------------------------------------------------------------------------
 # Waiver cases (task 3).
 # ---------------------------------------------------------------------------
 
