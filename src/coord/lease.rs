@@ -19,6 +19,9 @@ pub type Lease = Coord<LeaseRecord>;
 /// Two `Shared` leases on the same repo are legal; two `Exclusive` leases on the same repo
 /// are not — `Exclusive` means this lane is about to write to the tree and no one else may
 /// hold any lease on it at the same time.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften into a handled default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LeaseKind {
@@ -27,6 +30,9 @@ pub enum LeaseKind {
 }
 
 /// How far an `Exclusive` lease's refusal reaches.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften into a handled default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LeaseScope {

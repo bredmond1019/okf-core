@@ -76,6 +76,13 @@ impl<'de> Deserialize<'de> for Message {
 }
 
 /// The five message kinds, each derived from a measured incident, no others.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03 across
+/// `core/mev/src`, `core/bastion/src`, `core/engine-rs/crates`) — there is no existing
+/// exhaustive match for `#[non_exhaustive]` to soften into a handled default, which is the
+/// attribute's entire purpose. A new kind is exactly the "measured incident" event this type's
+/// own doc comment says should drive a deliberate addition, not a value a softened match
+/// quietly waves through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MessageKind {
@@ -92,6 +99,13 @@ pub enum MessageKind {
 }
 
 /// Which durable-record kind holds the item a message is signalling about.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften. It is also the closed vocabulary this
+/// module already refuses an out-of-enum value against BEFORE the generic [`Coord`] parse
+/// even runs (`out_of_enum_durable_home_channel`, above) — a value outside it is a hard parse
+/// error today, an orthogonal runtime contract with data on disk that `#[non_exhaustive]`
+/// (a compile-time contract with Rust match sites) does not touch either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DurableHomeChannel {

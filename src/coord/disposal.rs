@@ -166,6 +166,12 @@ pub struct DisposalBreadth {
 /// files (`block`, `operator`, `none`, `carryover`, `chore`); anything else must be refused
 /// rather than silently accepted, since `route` decides which container downstream tooling
 /// writes the row into.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften. It is also the closed vocabulary this
+/// module already refuses an out-of-enum value against BEFORE the generic [`Coord`] parse
+/// even runs (`first_out_of_enum_route`, above) — a runtime contract with data on disk,
+/// orthogonal to `#[non_exhaustive]`'s compile-time contract with Rust match sites.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DisposalRoute {

@@ -45,6 +45,9 @@ pub struct Action {
 
 /// An error recovered while reconstructing an [`Opportunity`] (or its
 /// [`Contact`]/[`Action`] entries) from parsed frontmatter fields.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften into a handled default.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OpportunityError {
     #[error("missing required field `{0}`")]

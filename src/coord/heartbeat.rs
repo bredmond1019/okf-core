@@ -18,6 +18,12 @@
 use serde::{Deserialize, Serialize};
 
 /// The value found in a `.heartbeat` file — one of the two live formats on this machine.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften into a handled default. It also has no
+/// `Legacy`-style fallback by design (per the module doc comment: `parse_raw` never errors,
+/// any non-integer input is treated as the ISO-string form), so there is no degradation path
+/// this attribute could add even if it had consumers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum HeartbeatValue {

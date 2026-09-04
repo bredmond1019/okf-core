@@ -24,6 +24,9 @@ pub type Slot = Coord<SlotRecord>;
 /// `"self"` is the Python source's literal JSON string for the default case; it collides
 /// with the Rust keyword `self`, so the variant is named [`PidSource::OwnProcess`] and
 /// mapped onto the wire value with `#[serde(rename = "self")]`.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften into a handled default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PidSource {
     /// No `--pid` was supplied, or the supplied pid is the writer's own short-lived process —

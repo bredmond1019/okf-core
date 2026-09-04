@@ -659,6 +659,40 @@ GIT_DIR=$PWD/.git scripts/test_check_consumers.sh   # expect: 26 passed, 0 faile
 `scripts/check_consumers.sh` but the *implementation* is a separate script. Gating `mev
 check-consumers` itself is a different, tracked block (`mev` MV.18.A) — untouched here.
 
+## `#[non_exhaustive]` — when to soften a match, and when not to
+
+`OK.5.B` went type by type through every public enum in this crate (28, measured 2026-09-03 via
+`grep -c '^pub enum' src/`) and recorded a verdict in each one's own doc comment —
+`Exhaustive, because ...` or `#[non_exhaustive], because ...` — so the next variant does not
+re-litigate the question. The rule those verdicts follow:
+
+- **`#[non_exhaustive]` binds Rust match sites, at compile time.** It changes nothing about
+  parsing: a consumer that already has an exhaustive `match` on the type must add a catch-all
+  arm to keep compiling, but a value already on disk deserializes exactly as it did before.
+- **`#[serde(other)]` / an `Unknown(String)` fallback binds deserialization of data already on
+  disk, at runtime.** It changes nothing about Rust match sites: existing consumer code that
+  matches exhaustively on the *known* variants still compiles unchanged; what changes is that an
+  unrecognized value on the wire degrades into `Unknown(...)` instead of failing to parse.
+- **The two are orthogonal.** A type can need one, both, or neither — deciding one says nothing
+  about the other, and this block never edits the serde half of any type. `CarryoverKind`
+  (`src/state.rs`) is the concrete "both would be redundant" example: it already carries
+  `#[serde(untagged)]` + `Unknown(String)`, which is the runtime-degradation answer, so a
+  `#[non_exhaustive]` verdict there would only add a second, unused escape hatch for a problem
+  the first one already solves. `StateEdgeKind` (`src/state.rs`) is the concrete "only one
+  applies" example: it derives `Serialize` only, with no `Deserialize` impl, so
+  `#[serde(other)]`/`Unknown(_)` was never applicable to it — `#[non_exhaustive]` is the only
+  tool available for its match-site problem, and it is deliberately NOT applied there (see its
+  own doc comment: a consumer, `core/mev`, wrote an explicit empty match arm as a tripwire for
+  exactly this variant addition, and softening the match would silently delete that tripwire).
+- **The default is exhaustive.** Applying `#[non_exhaustive]` requires a written, positive
+  argument for why a new variant should degrade to a handled default rather than break every
+  consumer match loudly; leaving a type exhaustive requires only naming the reason (typically:
+  no consumers yet, so there is no existing match to soften — the attribute's whole stated
+  purpose — or an existing consumer convention, like mev's explicit-arm tripwires, that a
+  softened match would silently defeat). The attribute appeared zero times in this crate before
+  this block; it still appears zero times after it — every type's verdict landed on
+  `Exhaustive`, including the fifteen with real cross-repo consumers and the thirteen with none.
+
 ## See also
 
 - [`../README.md`](../README.md) — crate overview, public API, consumers, dependencies

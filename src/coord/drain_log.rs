@@ -19,6 +19,13 @@ use super::Coord;
 pub type DrainLog = Coord<DrainLogEntry>;
 
 /// The three drain-log row shapes, dispatched on the row's own `record` field.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03) — no
+/// existing match for `#[non_exhaustive]` to soften into a handled default. A fourth,
+/// unrecognised `record` tag is already the wrapping [`Coord`]'s degradation path (falls back
+/// to `Coord::Legacy` rather than erroring), which is the orthogonal runtime contract with
+/// data on disk; `#[non_exhaustive]` would only affect Rust match sites, of which there are
+/// none yet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "record", rename_all = "snake_case")]
 pub enum DrainLogEntry {

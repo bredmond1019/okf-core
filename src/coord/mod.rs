@@ -76,6 +76,14 @@ pub const COORD_STALE_TTL_SECONDS: u64 = 5400;
 /// `Typed` is declared first so `#[serde(untagged)]` tries the strict shape before falling
 /// back to `Legacy` — untagged enums try variants in declaration order and take the first
 /// one that deserializes without error.
+///
+/// Exhaustive, because this is a two-variant `Typed`/`Legacy` wrapper whose entire purpose is
+/// TOTAL coverage of every record — that is what lets a caller trust `is_legacy()`/`typed()`
+/// as a complete classification. `#[non_exhaustive]` would force every consumer to write a
+/// catch-all arm for a third variant that will never exist, which is strictly worse than
+/// exhaustive for a type shaped this way. Also zero-consumer today (measured 2026-09-03 across
+/// `core/mev/src`, `core/bastion/src`, `core/engine-rs/crates`), so there is no existing
+/// exhaustive match for the attribute to soften in the first place.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Coord<T> {

@@ -25,6 +25,10 @@ const ROADMAP_MARKER: &str = "roadmap";
 
 /// An error recovered while reconstructing a [`Proposal`] from parsed
 /// frontmatter fields.
+///
+/// Exhaustive, because it has zero consumer references today (measured 2026-09-03 across
+/// `core/mev/src`, `core/bastion/src`, `core/engine-rs/crates`) — there is no existing
+/// exhaustive match for `#[non_exhaustive]` to soften into a handled default.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProposalError {
     #[error("missing required field `{0}`")]
