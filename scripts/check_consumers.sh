@@ -622,6 +622,23 @@ verdict_is_compiled() { # verdict_is_compiled <verdict>
 RESULT_VERDICTS=()
 ANY_GATE_FAILURE=0
 
+# Set by main() from --allow-incomplete; consulted only by exit_for_verdicts.
+# Populated by print_report/print_json on every run so exit_for_verdicts can
+# judge completeness without re-deriving it (and so the two report paths
+# cannot independently disagree about the count they just printed).
+ALLOW_INCOMPLETE=0
+COVERAGE_DISCOVERED=0
+COVERAGE_COMPILED=0
+
+# Whether exit_for_verdicts should judge completeness at all. Set to 1 only
+# by the two FULL-FLEET report paths ((no args) and --json) in main(),
+# before exit_for_verdicts runs. Left 0 for --consumer: asking about one
+# named consumer is an explicit, deliberate narrowing, not the silent
+# partial-coverage this task's strict default exists to catch, so a single
+# consumer's own verdict (waived/broken/etc.) is the only thing that should
+# be able to fail that run.
+CHECK_COMPLETENESS=0
+
 json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
@@ -669,6 +686,8 @@ print_report() {
             echo "$eline"
         done
     fi
+    COVERAGE_DISCOVERED="$discovered"
+    COVERAGE_COMPILED="$compiled"
 }
 
 print_json() {
@@ -727,15 +746,29 @@ print_json() {
         complete_json="false"
     fi
     printf '],"discovered":%d,"compiled":%d,"complete":%s}\n' "$discovered" "$compiled" "$complete_json"
+    COVERAGE_DISCOVERED="$discovered"
+    COVERAGE_COMPILED="$compiled"
 }
 
-# Exit non-zero iff at least one consumer is broken-and-unwaived, or a
-# waiver is stale (its consumer now passes). ANY_GATE_FAILURE is set by
+# Exit non-zero iff at least one consumer is broken-and-unwaived, a waiver
+# is stale (its consumer now passes), or (task 3, DEFAULT/strict) fewer
+# consumers were compiled than were discovered. ANY_GATE_FAILURE is set by
 # print_report/print_json via gate_outcome_for as each consumer is
 # classified; a malformed or unknown-slug waiver row exits earlier, from
 # parse_waivers itself, before any consumer is even run.
+#
+# Strict-by-default with an explicit, written-down opt-out: silence (no
+# flags) now means "every discovered consumer actually compiled". A caller
+# that must tolerate a sibling's dirty tree — the normal case in a
+# concurrent fleet — has to say so with --allow-incomplete, which relaxes
+# ONLY the incompleteness check: a real broken-and-unwaived consumer still
+# fails the gate even under --allow-incomplete.
 exit_for_verdicts() {
     if [ "$ANY_GATE_FAILURE" -eq 1 ]; then
+        exit 1
+    fi
+    if [ "$CHECK_COMPLETENESS" -eq 1 ] && [ "$ALLOW_INCOMPLETE" -ne 1 ] \
+        && [ "$COVERAGE_COMPILED" -lt "$COVERAGE_DISCOVERED" ]; then
         exit 1
     fi
     exit 0
@@ -746,21 +779,64 @@ exit_for_verdicts() {
 # ---------------------------------------------------------------------------
 usage() {
     cat <<'EOF'
-Usage: check_consumers.sh [--list | --json | --consumer <slug>]
+Usage: check_consumers.sh [--allow-incomplete] [--list | --json | --consumer <slug>]
 
   (no args)          Discover, run, classify and report on every consumer.
-                      Exits non-zero iff a consumer is broken-and-unwaived,
-                      a waiver is stale, or a waiver row is malformed.
+                      STRICT BY DEFAULT (task 3): exits non-zero iff a
+                      consumer is broken-and-unwaived, a waiver is stale, a
+                      waiver row is malformed, OR fewer consumers were
+                      compiled than were discovered (a dirty/lockfile-stale/
+                      not-evaluable consumer counts as NOT compiled). The
+                      summary line naming the compiled-over-discovered count,
+                      and each uncompiled slug, is always printed regardless
+                      of this flag.
+  --allow-incomplete Opt out of the incompleteness half of the strict check
+                      above ONLY. A skipped-dirty/lockfile-stale/
+                      not-evaluable consumer no longer fails the gate by
+                      itself; a broken-and-unwaived consumer or a stale
+                      waiver still does. Written down here because that is
+                      the whole point of the design: an absence you have to
+                      pass a flag for is not the same as an absence nobody
+                      notices.
   --list             Print the discovered consumer slugs, one per line,
                       and exit 0. Discovery only; nothing is compiled.
-  --json             Same run as (no args), emitted as compact JSON.
+  --json             Same run as (no args), emitted as compact JSON. The
+                      top-level object carries "discovered"/"compiled"/
+                      "complete" (task 2); --allow-incomplete applies here
+                      exactly as it does to the human report.
   --consumer <slug>  Run and report on exactly one discovered consumer.
                       An unknown slug is a hard error naming the valid ones.
+                      The strict completeness check does NOT apply here —
+                      naming one consumer is a deliberate narrowing, not the
+                      silent partial coverage strict mode exists to catch,
+                      so only that consumer's own verdict can fail the run.
 EOF
 }
 
 main() {
     discover_consumer_records
+
+    # --allow-incomplete may appear anywhere among the arguments and is
+    # consumed here, before the remaining flags are dispatched below, so it
+    # composes with (no args), --json and --consumer alike.
+    local -a args=()
+    local arg
+    for arg in "$@"; do
+        if [ "$arg" = "--allow-incomplete" ]; then
+            ALLOW_INCOMPLETE=1
+        else
+            args+=("$arg")
+        fi
+    done
+    # ${args[@]} on an EMPTY array trips "unbound variable" under `set -u`
+    # on bash 3.2 (macOS's default /bin/bash) — the empty-array exemption
+    # bash 4.4+ has does not apply here. ${args[@]:-} sidesteps it.
+    set -- "${args[@]:-}"
+    # A single empty positional from the guard above (when args was truly
+    # empty) must not be mistaken for one real empty-string argument.
+    if [ "$#" -eq 1 ] && [ -z "${1:-}" ]; then
+        set --
+    fi
 
     # Zero discovered consumers is a BROKEN GATE, never a clean run.
     #
@@ -790,6 +866,7 @@ main() {
     if [ "$#" -eq 0 ]; then
         RESULT_VERDICTS=()
         ANY_GATE_FAILURE=0
+        CHECK_COMPLETENESS=1
         print_report
         exit_for_verdicts
     fi
@@ -801,6 +878,7 @@ main() {
         --json)
             RESULT_VERDICTS=()
             ANY_GATE_FAILURE=0
+            CHECK_COMPLETENESS=1
             print_json
             exit_for_verdicts
             ;;

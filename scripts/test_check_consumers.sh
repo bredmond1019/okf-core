@@ -306,13 +306,13 @@ check "broken: both error codes+sites are named" \
 # ---------------------------------------------------------------------------
 reset_fixtures
 set_cargo_fixture engine-rs 102 "$LOCKFILE_STALE_STDERR"
-run_gate --json
+run_gate --json --allow-incomplete
 check "lockfile-stale at exit 102 classifies lockfile-stale, exits 0" \
     "$( [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '"verdict":"lockfile-stale"' && echo 0 || echo 1 )"
 
 reset_fixtures
 set_cargo_fixture bastion 101 "$LOCKFILE_STALE_STDERR"
-run_gate --json
+run_gate --json --allow-incomplete
 check "lockfile-stale signature at exit 101 still classifies lockfile-stale (not broken)" \
     "$( [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '"verdict":"lockfile-stale"' && echo 0 || echo 1 )"
 
@@ -324,7 +324,7 @@ set_git_dirty bastion
 # Fixture that WOULD classify broken if cargo were ever invoked, to prove
 # the short-circuit, not merely a lucky pass fixture.
 set_cargo_fixture bastion 101 "$BASTION_BROKEN_STDERR"
-run_gate --json
+run_gate --json --allow-incomplete
 check "dirty tree classifies skipped-dirty and exits 0" \
     "$( [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '"verdict":"skipped-dirty"' && echo 0 || echo 1 )"
 check "dirty tree: cargo was never spawned for bastion" \
@@ -336,7 +336,7 @@ check "dirty tree: cargo was never spawned for bastion" \
 reset_fixtures
 set_cargo_fixture mev 1 'thread caused a panic; signal: killed
 '
-run_gate --json
+run_gate --json --allow-incomplete
 check "unrecognised failure classifies not-evaluable (exit code in reason), exits 0" \
     "$( [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '"verdict":"not-evaluable"' \
         && printf '%s' "$OUT" | grep -q '"detail":"unrecognized failure (exit 1)"' && echo 0 || echo 1 )"
@@ -347,7 +347,7 @@ check "unrecognised failure classifies not-evaluable (exit code in reason), exit
 reset_fixtures
 set_cargo_fixture engine-rs 0 ''
 : > "$BRAIN/engine-rs/.fake-cargo-mutate-lock"
-run_gate --json
+run_gate --json --allow-incomplete
 check "moved Cargo.lock hash classifies not-evaluable, exits 0" \
     "$( [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '"verdict":"not-evaluable"' \
         && printf '%s' "$OUT" | grep -q 'Cargo.lock hash changed' && echo 0 || echo 1 )"
@@ -374,10 +374,10 @@ check "all-compiled: summary line reads 'compiled 3 of 3 discovered'" \
 
 reset_fixtures
 set_git_dirty mev
-run_gate
-check "one-skipped: summary line reads 'compiled 2 of 3 discovered'" \
+run_gate --allow-incomplete
+check "one-skipped (--allow-incomplete): summary line reads 'compiled 2 of 3 discovered'" \
     "$( [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -qx 'compiled 2 of 3 discovered' && echo 0 || echo 1 )"
-check "one-skipped: summary is followed by the uncompiled slug and its verdict" \
+check "one-skipped (--allow-incomplete): summary is followed by the uncompiled slug and its verdict" \
     "$(printf '%s\n' "$OUT" | grep -qx '  mev: skipped-dirty' && echo 0 || echo 1)"
 
 # ---------------------------------------------------------------------------
@@ -397,15 +397,78 @@ check "json all-compiled: consumers array still present at the object's top leve
 
 reset_fixtures
 set_git_dirty mev
-run_gate --json
-check "json one-skipped: discovered 3, compiled 2, complete false" \
+run_gate --json --allow-incomplete
+check "json one-skipped (--allow-incomplete): discovered 3, compiled 2, complete false" \
     "$( [ "$RC" -eq 0 ] \
         && printf '%s' "$OUT" | grep -q '"discovered":3' \
         && printf '%s' "$OUT" | grep -q '"compiled":2' \
         && printf '%s' "$OUT" | grep -q '"complete":false' \
         && echo 0 || echo 1 )"
-check "json one-skipped: per-consumer element shape is unchanged (mev still skipped-dirty)" \
+check "json one-skipped (--allow-incomplete): per-consumer element shape is unchanged (mev still skipped-dirty)" \
     "$(printf '%s' "$OUT" | grep -q '"slug":"mev","verdict":"skipped-dirty"' && echo 0 || echo 1)"
+
+# ---------------------------------------------------------------------------
+# Case 9b: strict-by-default with an explicit --allow-incomplete opt-out
+# (this block's own task 3).
+# ---------------------------------------------------------------------------
+
+# Default + all compiled exits 0 (already exercised above; re-asserted here
+# explicitly as the "silence means complete" half of the strict design).
+reset_fixtures
+run_gate
+check "strict default: all-compiled still exits 0" \
+    "$( [ "$RC" -eq 0 ] && echo 0 || echo 1 )"
+
+# Default + one skipped-dirty consumer: exits non-zero and NAMES the slug.
+# Load-bearing positive control: assert the failure names "mev", not merely
+# that the exit code is non-zero — a fixture that failed for an unrelated
+# reason would otherwise read as a pass.
+reset_fixtures
+set_git_dirty mev
+run_gate
+check "strict default: one-skipped exits non-zero" \
+    "$( [ "$RC" -ne 0 ] && echo 0 || echo 1 )"
+check "strict default: one-skipped failure NAMES the uncompiled slug (positive control)" \
+    "$(printf '%s\n' "$OUT" | grep -qx '  mev: skipped-dirty' && echo 0 || echo 1)"
+
+# Same case under --json: strict default also fails the JSON path, and the
+# object still carries discovered/compiled/complete so a caller can see why.
+reset_fixtures
+set_git_dirty mev
+run_gate --json
+check "strict default (--json): one-skipped exits non-zero" \
+    "$( [ "$RC" -ne 0 ] && echo 0 || echo 1 )"
+check "strict default (--json): still reports discovered 3, compiled 2, complete false" \
+    "$( printf '%s' "$OUT" | grep -q '"discovered":3' \
+        && printf '%s' "$OUT" | grep -q '"compiled":2' \
+        && printf '%s' "$OUT" | grep -q '"complete":false' \
+        && echo 0 || echo 1 )"
+
+# --allow-incomplete relaxes incompleteness ONLY: a genuinely broken,
+# unwaived consumer alongside a dirty one must still fail the gate.
+reset_fixtures
+set_git_dirty mev
+set_cargo_fixture bastion 101 "$BASTION_BROKEN_STDERR"
+run_gate --allow-incomplete
+check "--allow-incomplete: incompleteness relaxed but a real break still exits non-zero" \
+    "$( [ "$RC" -ne 0 ] && echo 0 || echo 1 )"
+check "--allow-incomplete: the broken consumer is still named, not just the skipped one" \
+    "$(printf '%s\n' "$OUT" | grep -q '== bastion: broken' && echo 0 || echo 1)"
+
+# --allow-incomplete + a fully clean run still exits 0 (no regression from
+# the opt-out flag itself).
+reset_fixtures
+run_gate --allow-incomplete
+check "--allow-incomplete: all-compiled still exits 0" \
+    "$( [ "$RC" -eq 0 ] && echo 0 || echo 1 )"
+
+# The skip behaviour itself is unchanged by any of this: cargo must still
+# never be spawned for the dirty consumer, strict or not.
+reset_fixtures
+set_git_dirty mev
+run_gate
+check "strict default: dirty consumer is still never compiled (cargo not spawned)" \
+    "$( ! cargo_was_called mev && echo 0 || echo 1 )"
 
 # ---------------------------------------------------------------------------
 # Waiver cases (task 3).
