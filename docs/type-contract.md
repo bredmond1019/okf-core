@@ -12,9 +12,34 @@ related: [core:okf-core, okf-core-architecture, okf-core-checks, brain:fleet-con
 
 # okf-core type contract
 
+## What this page is for
+
+**Read this before changing any public type in okf-core.** Three other repos link this crate
+directly, so a change here can break their builds — not at runtime, at compile time, in someone
+else's lane. This page tells you which types are load-bearing, what counts as a breaking change to
+each, and whose job it is to fix the consumers.
+
+## Quickstart
+
+All three are **shell** commands, run from `core/okf-core/`:
+
+```bash
+scripts/check_consumers.sh --list          # who depends on okf-core right now (compiles nothing)
+scripts/check_consumers.sh                 # compile every consumer's test targets; STRICT — fails if any was skipped
+scripts/check_consumers.sh --allow-incomplete   # what planning/harness.json runs; tolerates a dirty sibling
+```
+
+| Before you change a type | Where to look |
+|---|---|
+| Is this type load-bearing? | [Load-bearing types](#load-bearing-types) below |
+| Will adding a variant break someone? | [The two orthogonal contracts](#the-two-orthogonal-contracts) |
+| Will adding a *field* break someone? | [Two break classes, not one](#two-break-classes-not-one) — yes, even with `Default` |
+| Who fixes the consumers? | [The sequencing rule](#the-sequencing-rule) — you do, in the same wave |
+| Is the type exhaustive on purpose? | its own doc comment in `src/state.rs` — every enum carries a written verdict |
+
 The other seven contract docs in this fleet (`engine-rs`/`bastion`/`synapse` data-contracts, the
 workspace contract, the carryover contract, the serve-api contract — see
-[`brain:fleet-contract-map`](../../../docs/fleet-contract-map.md)) all describe a **wire/JSON
+`agentic-portfolio/docs/fleet-contract-map.md`) all describe a **wire/JSON
 payload crossing a process boundary**: the contract is a serialized shape, and the failure mode is
 a runtime parse error on a stale pin. This doc is shaped differently on purpose, because okf-core's
 exposure is different in kind, not degree.
@@ -24,7 +49,7 @@ exposure is different in kind, not degree.
 okf-core exports a **linked Rust surface**. `mev`, `bastion` and `engine-rs` depend on it directly
 as a Cargo path dependency (`engine-rs` via `[workspace.dependencies]`) — no version number, no
 pin-and-consumer doc pair. This is exactly the shape `fleet-contract-map.md` already documents for
-a different repo, in its ["The unversioned case: bella-engine → bastion"](../../../docs/fleet-contract-map.md#the-unversioned-case-bella-engine--bastion)
+a different repo, in its "The unversioned case: bella-engine → bastion"
 section: per bella's `D3-bella-engine-shared-with-bastion.md`, *"treat `lib.rs` as a cross-repo
 contract"* — a breaking change to the public surface breaks the consumer's build immediately, which
 is a **stronger** guarantee than a stale doc pin (it cannot silently drift, only hard-fail), but it
