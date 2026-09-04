@@ -47,7 +47,13 @@
 #       Discovery only — nothing is compiled.
 #   scripts/check_consumers.sh --json
 #       Same run as the default, emitted as compact JSON instead of the
-#       human report. Same exit-code rule.
+#       human report. Same exit-code rule. Top level is an object:
+#       {"consumers": [...], "discovered": M, "compiled": N, "complete":
+#       true|false} — each element of "consumers" is byte-identical in
+#       shape to before this became an object (task 2); "complete" is
+#       true exactly when compiled == discovered. BREAKING CHANGE from
+#       the prior bare-array shape (task 2, 2026-09-03): --json had no
+#       programmatic caller anywhere in the fleet at the time.
 #   scripts/check_consumers.sh --consumer <slug>
 #       Run and report on exactly one discovered consumer. An unknown slug
 #       is a hard error naming the valid ones; nothing is compiled.
@@ -667,11 +673,16 @@ print_report() {
 
 print_json() {
     local i slug dir first=1 efirst eline code site gate_fail_json
-    printf '['
+    local discovered=0 compiled=0 complete_json
+    printf '{"consumers":['
     for i in "${!CONSUMER_SLUGS[@]}"; do
         slug="${CONSUMER_SLUGS[$i]}"
         dir="${CONSUMER_DIRS[$i]}"
         run_and_classify_consumer "$slug" "$dir"
+        discovered=$((discovered + 1))
+        if verdict_is_compiled "$VERDICT"; then
+            compiled=$((compiled + 1))
+        fi
         if gate_outcome_for "$slug" "$VERDICT"; then
             gate_fail_json="false"
         else
@@ -710,7 +721,12 @@ print_json() {
         printf '}'
         RESULT_VERDICTS+=("$VERDICT")
     done
-    printf ']\n'
+    if [ "$compiled" -eq "$discovered" ]; then
+        complete_json="true"
+    else
+        complete_json="false"
+    fi
+    printf '],"discovered":%d,"compiled":%d,"complete":%s}\n' "$discovered" "$compiled" "$complete_json"
 }
 
 # Exit non-zero iff at least one consumer is broken-and-unwaived, or a

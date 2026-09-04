@@ -381,6 +381,33 @@ check "one-skipped: summary is followed by the uncompiled slug and its verdict" 
     "$(printf '%s\n' "$OUT" | grep -qx '  mev: skipped-dirty' && echo 0 || echo 1)"
 
 # ---------------------------------------------------------------------------
+# Case 9: --json's top-level aggregate object (task 2).
+# ---------------------------------------------------------------------------
+
+reset_fixtures
+run_gate --json
+check "json all-compiled: top level carries discovered/compiled/complete" \
+    "$( [ "$RC" -eq 0 ] \
+        && printf '%s' "$OUT" | grep -q '"discovered":3' \
+        && printf '%s' "$OUT" | grep -q '"compiled":3' \
+        && printf '%s' "$OUT" | grep -q '"complete":true' \
+        && echo 0 || echo 1 )"
+check "json all-compiled: consumers array still present at the object's top level" \
+    "$(printf '%s' "$OUT" | grep -q '^{"consumers":\[' && echo 0 || echo 1)"
+
+reset_fixtures
+set_git_dirty mev
+run_gate --json
+check "json one-skipped: discovered 3, compiled 2, complete false" \
+    "$( [ "$RC" -eq 0 ] \
+        && printf '%s' "$OUT" | grep -q '"discovered":3' \
+        && printf '%s' "$OUT" | grep -q '"compiled":2' \
+        && printf '%s' "$OUT" | grep -q '"complete":false' \
+        && echo 0 || echo 1 )"
+check "json one-skipped: per-consumer element shape is unchanged (mev still skipped-dirty)" \
+    "$(printf '%s' "$OUT" | grep -q '"slug":"mev","verdict":"skipped-dirty"' && echo 0 || echo 1)"
+
+# ---------------------------------------------------------------------------
 # Waiver cases (task 3).
 # ---------------------------------------------------------------------------
 
