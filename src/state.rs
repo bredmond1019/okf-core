@@ -962,6 +962,19 @@ pub struct Carryover {
     /// several repos. No registry, many-to-one by construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finding_id: Option<String>,
+    /// A single-line label for this entry, written for a reader who does NOT
+    /// already have the context — the row label a renderer shows before the
+    /// reader opens a drawer. `text` stays the full finding: multi-paragraph,
+    /// written for an agent with zero session memory. Consumers are the
+    /// renderers (mev's Attention board, bastion's `AttentionCarryoverDto`,
+    /// bastion-web's row); okf-core never derives, clips, or defaults this
+    /// from `text` — an absent `summary` falls back to today's behaviour,
+    /// never to a fabricated value. Optional and defaults to absent: no live
+    /// entries carry this field yet, and `skip_serializing_if` keeps every
+    /// entry that never mentions it byte-identical rather than gaining a
+    /// `"summary": null` line on the next `mev emit-state --write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     /// Condition under which this entry should be deleted: either free
     /// prose (the legacy and still-valid form for subjective conditions) or
     /// a typed predicate object whose `type` is one of `block_closed`,
@@ -2116,6 +2129,65 @@ mod tests {
             before_carryover, after_carryover,
             "carryover entry must round-trip byte-identically with no enforce key"
         );
+    }
+
+    #[test]
+    fn carryover_without_summary_serializes_no_summary_key() {
+        // The same churn-free adoption contract as `enforce`: a Carryover
+        // with `summary: None` must serialize with no `"summary"` key at
+        // all, not merely a non-null one — this is what keeps every one of
+        // today's live entries byte-identical when the field is added.
+        let entry = Carryover {
+            slug: "held-by-this".to_string(),
+            kind: CarryoverKind::Known(KnownCarryoverKind::Deferred),
+            text: "blocks OK.9.Z".to_string(),
+            created: "2026-08-21".to_string(),
+            ..Default::default()
+        };
+        assert!(entry.summary.is_none());
+
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(
+            !json.contains("summary"),
+            "serialized carryover must contain no summary key, got: {json}"
+        );
+    }
+
+    #[test]
+    fn carryover_summary_round_trips_verbatim() {
+        // A summary value with an em dash and internal punctuation must
+        // survive serialize -> deserialize with no trimming, newline
+        // collapsing, or truncation — exactly the mangling `ensure_ascii`
+        // and whitespace handling would silently introduce on a label field.
+        let raw_summary = "Attention board row label — needs a look, per D72.";
+        let entry = Carryover {
+            slug: "held-by-this".to_string(),
+            kind: CarryoverKind::Known(KnownCarryoverKind::Deferred),
+            text: "blocks OK.9.Z".to_string(),
+            created: "2026-08-21".to_string(),
+            summary: Some(raw_summary.to_string()),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let round_tripped: Carryover = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(round_tripped.summary.as_deref(), Some(raw_summary));
+    }
+
+    #[test]
+    fn carryover_absent_summary_round_trips_to_none() {
+        // A `state.json` entry authored today, with no `summary` key at
+        // all, must deserialize to `summary: None` rather than erroring or
+        // defaulting to some fabricated value.
+        let json = carryover_fixture(
+            "",
+            r#"[{"type": "block", "repo": "okf-core", "id": "OK.9.Z", "what": null}]"#,
+        );
+        let file: StateFile = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(file.carryover.len(), 1);
+        assert!(file.carryover[0].summary.is_none());
     }
 
     #[test]
