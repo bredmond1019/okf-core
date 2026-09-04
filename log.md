@@ -12,6 +12,43 @@ timestamp: "2026-09-01T00:35:47-03:00"
 
 # Log
 
+## [run: 2026-09-03]
+
+### `OK.6.A` — coordination record types + live-tree lint — BAILED at task 6 (tasks 1-5 PASS)
+
+Implemented tasks 1-5 of `OK.6.A` via `/sdlc-flow`: a `coord` module with `COORD_STALE_TTL_SECONDS`
+(5400s) and a shared `Coord<T>` typed/legacy untagged enum (task 1); the six live coordination
+record kinds — registry, lease, slot, message, heartbeat, escalation — each pinned to their real
+schema or measured on-disk shape, with an optional `host` field and round-trip fixtures (task 2);
+the three artifacts engine-rs writes — sweep snapshots, drain-log rows, and `disposal.json` — typed
+the same way, with `DisposalFile`/`DisposalRow`/`DisposalRoute` deliberately named apart from the
+pre-existing `DisposalReason` to avoid a name collision (task 3); `Disposal` and `Message` converted
+from a `Coord<T>` alias to a newtype with a manual `Deserialize` impl so an out-of-enum `route` or
+`durable_home.channel` hard-refuses instead of falling to `Legacy` (task 4); and
+`tests/live_tree.rs`, an `#[ignore]`d integration test that walks this machine's real
+`.fleet-locks/`, `escalations.jsonl`, `drain-log.jsonl`, `sweeps/*.json` and `disposal-*.json`,
+naming every record that lands in `Legacy` (task 5). All five tasks report a confirmed
+`workAssertionPassed`. Task 6 (Validate) ran and passed all six harness checks — `cargo fmt --check`,
+`cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo build --release`,
+`scripts/check_consumers.sh` (bastion/engine-rs/mev all pass), `scripts/test_check_consumers.sh`
+(26/26) — but the run **BAILED**: task 6 is a pure validation gate (`files: []`, no commit), and the
+terminal write recipe's work-assertion step requires a positive `workAssertionPassed` confirmation
+that a no-op validation task structurally cannot produce. This is a design mismatch between the
+assertion mechanism and this task's shape, not a fixable code defect in the coord module itself — the
+actual coordination-type work (tasks 1-5) is complete and validated. `planning/status.md` marked
+`OK.6.A` BLOCKED pending a fix to the work-assertion mechanism for no-op validation tasks; no
+`state.json` block-status flip was made this run. Next: resolve the task-6/work-assertion design gap
+(either give a pure-validation task an alternate assertion path, or have `/sdlc-flow`'s review stage
+absorb final validation instead of a dedicated task), then re-run or manually close `OK.6.A`.
+
+```
+28389f3 feat: implement OK.6.A-task5
+b7a2c32 feat: implement OK.6.A-task4
+f73fb20 feat: implement OK.6.A-task3
+49380c4 feat: implement OK.6.A-task2
+8868041 feat: implement OK.6.A-task1
+```
+
 ## [run: 2026-08-31]
 
 ### `planning/context.md` audit — it described three contracts; the crate has four
