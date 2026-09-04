@@ -708,6 +708,18 @@ pub struct Backlog {
     /// Attention board + warnings while `today < snoozed_until`, regardless of age.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<String>,
+    /// The entry stops being worth doing. Same typed predicates (and prose
+    /// fallback) as carryover[]'s `clears_when`, reused verbatim — no new
+    /// predicate vocabulary is minted. okf-core defines the SHAPE only and
+    /// never evaluates it (AGENTS.md rule 3); evaluation is mev's
+    /// `MV.ticket.backlog-sweep-verb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clears_when: Option<ClearsWhen>,
+    /// The entry BECOMES worth doing — same shape as `clears_when`, opposite
+    /// meaning. okf-core defines the SHAPE only and never evaluates it
+    /// (AGENTS.md rule 3); evaluation is mev's `MV.ticket.backlog-sweep-verb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ready_when: Option<ClearsWhen>,
     /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
     #[serde(flatten, default)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -2134,6 +2146,97 @@ mod tests {
         assert!(
             !obj.contains_key("snoozed_until"),
             "snoozed_until must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("clears_when"),
+            "clears_when must be omitted when None"
+        );
+        assert!(
+            !obj.contains_key("ready_when"),
+            "ready_when must be omitted when None"
+        );
+    }
+
+    #[test]
+    fn backlog_clears_when_and_ready_when_round_trip_all_predicate_forms() {
+        // Both fields reuse ClearsWhen/ClearsWhenPredicate verbatim (no new
+        // predicate vocabulary) — exercise the prose fallback and each of the
+        // four typed predicates on BOTH fields, plus an entry carrying both
+        // at once with distinct values, and confirm each round-trips
+        // byte-for-byte (via re-parsed Value equality, matching this file's
+        // existing round-trip convention).
+        let cases = [
+            r#""some prose condition""#.to_string(),
+            r#"{"type": "block_closed", "repo": "mev", "id": "MV.ticket.backlog-sweep-verb"}"#
+                .to_string(),
+            r#"{"type": "file_exists", "path": "planning/state.json"}"#.to_string(),
+            r#"{"type": "file_contains", "path": "planning/state.json", "pattern": "clears_when"}"#
+                .to_string(),
+            r#"{"type": "command_exits_zero", "command": "true"}"#.to_string(),
+        ];
+        for field in ["clears_when", "ready_when"] {
+            for case in &cases {
+                let json = format!(
+                    r#"{{
+                        "slug": "x",
+                        "title": "X",
+                        "repo": "core",
+                        "type": "feature",
+                        "status": "idea",
+                        "{field}": {case}
+                    }}"#
+                );
+                let original: serde_json::Value = serde_json::from_str(&json).unwrap();
+                let bl: Backlog = serde_json::from_str(&json).unwrap();
+                let round: serde_json::Value = serde_json::to_value(&bl).unwrap();
+                assert_eq!(
+                    original.get(field),
+                    round.get(field),
+                    "field `{field}` with predicate `{case}` did not round-trip"
+                );
+            }
+        }
+
+        // Both fields present at once, with DIFFERENT values, both preserved.
+        let json = r#"{
+            "slug": "x",
+            "title": "X",
+            "repo": "core",
+            "type": "feature",
+            "status": "idea",
+            "clears_when": {"type": "block_closed", "repo": "mev", "id": "MV.ticket.backlog-sweep-verb"},
+            "ready_when": "waiting on the paired block to land"
+        }"#;
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        let bl: Backlog = serde_json::from_str(json).unwrap();
+        let round: serde_json::Value = serde_json::to_value(&bl).unwrap();
+        assert_eq!(original.get("clears_when"), round.get("clears_when"));
+        assert_eq!(original.get("ready_when"), round.get("ready_when"));
+        assert!(matches!(
+            bl.clears_when,
+            Some(ClearsWhen::Predicate(
+                ClearsWhenPredicate::BlockClosed { .. }
+            ))
+        ));
+        assert!(matches!(bl.ready_when, Some(ClearsWhen::Prose(_))));
+    }
+
+    #[test]
+    fn backlog_clears_when_unknown_predicate_type_is_a_parse_error() {
+        // Same behaviour as carryover[]'s clears_when: an unknown `type` is a
+        // parse error, not a silent fall-through to the prose variant.
+        let json = r#"{
+            "slug": "x",
+            "title": "X",
+            "repo": "core",
+            "type": "feature",
+            "status": "idea",
+            "clears_when": {"type": "not_a_real_predicate"}
+        }"#;
+        let result: Result<Backlog, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown clears_when predicate type must fail to deserialize"
         );
     }
 

@@ -52,7 +52,7 @@
 // location stays an explicit table here rather than the struct or the doc
 // itself. The names below were read off the current
 // `docs/state/state-schema.md` field tables (Block vocabulary = 14 names,
-// `backlog[]` = 12, `epics[]` = 7, `carryover[]` = 12) — every row currently
+// `backlog[]` = 14, `epics[]` = 7, `carryover[]` = 12) — every row currently
 // documented, not filtered to non-derived fields, because the floor guards
 // the PARSE (what `parse_field_tables` returns), not the post-exemption
 // conformance check that runs on top of it.
@@ -136,6 +136,8 @@ pub fn expected_field_names(section: &str) -> &'static [&'static str] {
             "created",
             "reviewed",
             "snoozed_until",
+            "clears_when",
+            "ready_when",
         ],
         "epics[]" => &[
             "slug",
@@ -213,6 +215,8 @@ mod tests {
                 "created",
                 "reviewed",
                 "snoozed_until",
+                "clears_when",
+                "ready_when",
             ]
         );
         assert_eq!(
