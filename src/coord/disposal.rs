@@ -13,14 +13,76 @@
 //! [`DisposalRow`] and [`DisposalRoute`] so the two never collide in `lib.rs`'s re-export
 //! list.
 
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 
 use super::Coord;
 
 /// A `disposal.json` file, wrapped in [`Coord`] so a file already on disk in some shape
-/// this module doesn't yet know about (or carrying a `route` outside the closed enum) still
-/// deserializes as [`Coord::Legacy`] instead of failing outright.
-pub type Disposal = Coord<DisposalFile>;
+/// this module doesn't yet know about still deserializes as [`Coord::Legacy`] instead of
+/// failing outright.
+///
+/// **Not** a plain `Coord<DisposalFile>` type alias: `route` is a closed vocabulary this
+/// module DOES type ([`DisposalRoute`]), and a value outside it must be REFUSED with a hard
+/// parse error, not swallowed into `Legacy` the way an unrecognized shape is. `Coord<T>`'s
+/// `#[serde(untagged)]` derive can't tell those two failure causes apart on its own — any
+/// error deserializing `T` just falls through to `Legacy` — so this wrapper inspects the raw
+/// JSON for an out-of-enum `route` before ever attempting the generic `Coord` parse. (OK.6.A
+/// task 4.)
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Disposal(Coord<DisposalFile>);
+
+impl Disposal {
+    /// True if this record fell back to the untyped [`Coord::Legacy`] escape.
+    pub fn is_legacy(&self) -> bool {
+        self.0.is_legacy()
+    }
+
+    /// The strict typed value, if this record parsed into one.
+    pub fn typed(&self) -> Option<&DisposalFile> {
+        self.0.typed()
+    }
+
+    /// The raw JSON of a legacy record, if this record fell back to [`Coord::Legacy`].
+    pub fn legacy_value(&self) -> Option<&serde_json::Value> {
+        self.0.legacy_value()
+    }
+}
+
+/// The `route` values [`DisposalRoute`] accepts on the wire — kept alongside the enum so the
+/// pre-parse refusal check in [`Disposal`]'s `Deserialize` impl and the enum's own
+/// `#[serde(rename_all)]` can never quietly drift apart from each other.
+const VALID_DISPOSAL_ROUTES: [&str; 5] = ["block", "operator", "none", "carryover", "chore"];
+
+/// Finds the first row (if any) whose `route` is a string outside [`VALID_DISPOSAL_ROUTES`].
+/// Returns `None` when `rows` is absent, not an array, or every row's `route` is either
+/// missing, not a string, or in the closed vocabulary — those cases are left to the generic
+/// [`Coord`] parse (and its `Legacy` fallback) to sort out.
+fn first_out_of_enum_route(value: &serde_json::Value) -> Option<&str> {
+    value.get("rows")?.as_array()?.iter().find_map(|row| {
+        let route = row.get("route")?.as_str()?;
+        (!VALID_DISPOSAL_ROUTES.contains(&route)).then_some(route)
+    })
+}
+
+impl<'de> Deserialize<'de> for Disposal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(bad_route) = first_out_of_enum_route(&value) {
+            return Err(de::Error::custom(format!(
+                "disposal row `route` {bad_route:?} is not one of the closed DisposalRoute \
+                 values {VALID_DISPOSAL_ROUTES:?}"
+            )));
+        }
+        let coord: Coord<DisposalFile> =
+            serde_json::from_value(value).map_err(de::Error::custom)?;
+        Ok(Disposal(coord))
+    }
+}
 
 /// The strict, current shape of a `disposal.json` file's top level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,10 +228,13 @@ mod tests {
     fn route_rejects_values_outside_the_enum() {
         let mut value = serde_json::to_value(sample_file()).unwrap();
         value["rows"][0]["route"] = serde_json::json!("bogus_route");
-        let disposal: Disposal = serde_json::from_value(value).unwrap();
-        // Coord<T> is untagged, so an out-of-enum `route` falls to Legacy rather than a
-        // hard parse error — but it must NOT land in Typed with a bogus route.
-        assert!(disposal.is_legacy());
+        let result: Result<Disposal, _> = serde_json::from_value(value);
+        // An out-of-enum `route` is a closed vocabulary we DO type, so it must be a hard
+        // parse error — never accepted, and never swallowed into Legacy (OK.6.A task 4).
+        assert!(
+            result.is_err(),
+            "expected a bogus route to be refused, got: {result:?}"
+        );
     }
 
     #[test]

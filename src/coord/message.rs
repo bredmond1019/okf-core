@@ -6,6 +6,7 @@
 //! `kind` and `durable_home.channel` are both closed vocabularies — an out-of-enum value
 //! must be refused, not silently accepted.
 
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 
 use super::Coord;
@@ -13,7 +14,66 @@ use super::Coord;
 /// A cross-lane message envelope (`message.schema.json`), wrapped in [`Coord`] so an
 /// envelope already on disk in some shape this module doesn't yet know about still
 /// deserializes as [`Coord::Legacy`].
-pub type Message = Coord<MessageRecord>;
+///
+/// **Not** a plain `Coord<MessageRecord>` type alias: `durable_home.channel` is a closed
+/// vocabulary this module DOES type ([`DurableHomeChannel`]), and a value outside it must be
+/// REFUSED with a hard parse error, not swallowed into `Legacy` — the exact defect a live
+/// envelope hit (`durable_home.channel: "state"`; see `check_messages.py`'s FINDING). As with
+/// [`crate::Disposal`], `Coord<T>`'s `#[serde(untagged)]` derive can't tell "unknown shape"
+/// from "known field, disallowed value" apart on its own, so this wrapper inspects the raw
+/// JSON before attempting the generic `Coord` parse. (OK.6.A task 4.)
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Message(Coord<MessageRecord>);
+
+impl Message {
+    /// True if this record fell back to the untyped [`Coord::Legacy`] escape.
+    pub fn is_legacy(&self) -> bool {
+        self.0.is_legacy()
+    }
+
+    /// The strict typed value, if this record parsed into one.
+    pub fn typed(&self) -> Option<&MessageRecord> {
+        self.0.typed()
+    }
+
+    /// The raw JSON of a legacy record, if this record fell back to [`Coord::Legacy`].
+    pub fn legacy_value(&self) -> Option<&serde_json::Value> {
+        self.0.legacy_value()
+    }
+}
+
+/// The `durable_home.channel` values [`DurableHomeChannel`] accepts on the wire, per
+/// `message.schema.json`.
+const VALID_DURABLE_HOME_CHANNELS: [&str; 4] =
+    ["lane-log", "state-edge", "carryover", "run-record"];
+
+/// Returns the message's `durable_home.channel` when present as a string outside
+/// [`VALID_DURABLE_HOME_CHANNELS`]. Returns `None` when the field is absent, not a string, or
+/// already in the closed vocabulary — those cases are left to the generic [`Coord`] parse
+/// (and its `Legacy` fallback) to sort out.
+fn out_of_enum_durable_home_channel(value: &serde_json::Value) -> Option<&str> {
+    let channel = value.get("durable_home")?.get("channel")?.as_str()?;
+    (!VALID_DURABLE_HOME_CHANNELS.contains(&channel)).then_some(channel)
+}
+
+impl<'de> Deserialize<'de> for Message {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(bad_channel) = out_of_enum_durable_home_channel(&value) {
+            return Err(de::Error::custom(format!(
+                "message durable_home.channel {bad_channel:?} is not one of the closed \
+                 DurableHomeChannel values {VALID_DURABLE_HOME_CHANNELS:?}"
+            )));
+        }
+        let coord: Coord<MessageRecord> =
+            serde_json::from_value(value).map_err(de::Error::custom)?;
+        Ok(Message(coord))
+    }
+}
 
 /// The five message kinds, each derived from a measured incident, no others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,13 +241,16 @@ mod tests {
     #[test]
     fn durable_home_channel_rejects_values_outside_the_enum() {
         // "state" is the exact defect a live envelope hit (see the FINDING referenced in
-        // task 4's known-bad fixture) — not one of the four accepted channels.
+        // task 4's known-bad fixture) — not one of the four accepted channels. A closed
+        // vocabulary we DO type must be refused with a hard parse error, never accepted and
+        // never swallowed into Legacy (OK.6.A task 4).
         let mut value = serde_json::to_value(full_message()).unwrap();
         value["durable_home"]["channel"] = serde_json::json!("state");
-        let message: Message = serde_json::from_value(value).unwrap();
-        // Falls to Legacy rather than a hard parse error (Coord<T> is untagged), but it must
-        // NOT land in Typed with a bogus channel.
-        assert!(message.is_legacy());
+        let result: Result<Message, _> = serde_json::from_value(value);
+        assert!(
+            result.is_err(),
+            "expected an out-of-enum durable_home.channel to be refused, got: {result:?}"
+        );
     }
 
     #[test]
