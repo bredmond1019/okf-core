@@ -47,6 +47,8 @@ pub enum LearningArtifactError {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LearningArtifact {
     pub artifact_id: String,
+    pub title: String,
+    pub description: String,
     pub channel_type: String,
     pub source_ref: String,
     pub summary: String,
@@ -83,6 +85,8 @@ impl LearningArtifact {
 
         Self {
             artifact_id: str_field("artifact_id"),
+            title: str_field("title"),
+            description: str_field("description"),
             channel_type: str_field("channel_type"),
             source_ref: str_field("source_ref"),
             summary: str_field("summary"),
@@ -108,6 +112,8 @@ impl LearningArtifact {
 
         let artifact_id =
             scalar("artifact_id").ok_or(LearningArtifactError::MissingField("artifact_id"))?;
+        let title = scalar("title").unwrap_or_default();
+        let description = scalar("description").unwrap_or_default();
         let channel_type = scalar("channel_type").unwrap_or_default();
         let source_ref = scalar("source_ref").unwrap_or_default();
         let summary = scalar("summary").unwrap_or_default();
@@ -119,6 +125,8 @@ impl LearningArtifact {
 
         Ok(Self {
             artifact_id,
+            title,
+            description,
             channel_type,
             source_ref,
             summary,
@@ -135,6 +143,14 @@ impl BrainDocModel for LearningArtifact {
             (
                 "type".to_string(),
                 FrontmatterValue::Scalar("LearningArtifact".to_string()),
+            ),
+            (
+                "title".to_string(),
+                FrontmatterValue::Scalar(self.title.clone()),
+            ),
+            (
+                "description".to_string(),
+                FrontmatterValue::Scalar(self.description.clone()),
             ),
             (
                 "artifact_id".to_string(),
@@ -202,6 +218,8 @@ mod tests {
     fn full() -> LearningArtifact {
         LearningArtifact {
             artifact_id: "artifact-1".to_string(),
+            title: "A concise summary title".to_string(),
+            description: "A one-line description of the artifact.".to_string(),
             channel_type: "web_article".to_string(),
             source_ref: "https://example.com/a".to_string(),
             summary: "A concise summary.".to_string(),
@@ -243,6 +261,8 @@ mod tests {
     fn from_payload_maps_engine_rs_content_pipeline_shape() {
         let payload = serde_json::json!({
             "artifact_id": "artifact-1",
+            "title": "A concise summary title",
+            "description": "A one-line description of the artifact.",
             "channel_type": "web_article",
             "source_ref": "https://example.com/a",
             "summary": "A concise summary.",
@@ -291,5 +311,49 @@ mod tests {
             ..full()
         };
         assert_eq!(artifact.slug(), "artifact-one");
+    }
+
+    #[test]
+    fn from_payload_defaults_title_description_when_absent() {
+        let payload = serde_json::json!({
+            "artifact_id": "artifact-1",
+            "channel_type": "web_article",
+            "source_ref": "https://example.com/a",
+            "summary": "A concise summary.",
+            "digest_markdown": "# Digest\n\nA concise summary.",
+            "entities": ["Acme Corp"],
+            "language": "en",
+        });
+        let artifact = LearningArtifact::from_payload(&payload);
+        assert_eq!(artifact.title, "");
+        assert_eq!(artifact.description, "");
+    }
+
+    #[test]
+    fn frontmatter_emits_title_and_description_after_type() {
+        let artifact = full();
+        let fields = artifact.frontmatter();
+        assert_eq!(fields[0].0, "type");
+        assert_eq!(
+            fields[1],
+            (
+                "title".to_string(),
+                FrontmatterValue::Scalar(artifact.title.clone()),
+            )
+        );
+        assert_eq!(
+            fields[2],
+            (
+                "description".to_string(),
+                FrontmatterValue::Scalar(artifact.description.clone()),
+            )
+        );
+    }
+
+    #[test]
+    fn render_document_contains_title_and_description_lines() {
+        let rendered = render_document(&full());
+        assert!(rendered.contains("title: A concise summary title"));
+        assert!(rendered.contains("description: A one-line description of the artifact."));
     }
 }
