@@ -1,0 +1,15 @@
+{
+  "message_id": "70ef6ce8-abcd-4e21-9f10-0000000000aa",
+  "sender": {
+    "agent_name": "base-template-4c",
+    "repo": "base-template",
+    "lane": "types",
+    "roadmap": "coordination-layer-port"
+  },
+  "sent_at": "2026-08-28T02:08:00Z",
+  "kind": "EDGE_RELEASED",
+  "subject": { "repo": "bastion", "block": "BA.21.A" },
+  "body": "bastion:BA.21.A is now unblocked on the engine side.",
+  "durable_home": { "channel": "state-edge", "ref": "bastion/planning/state.json#BA.21.A" },
+  "verified_by": "UNVERIFIED: engine-rs-31"
+}

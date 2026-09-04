@@ -1,0 +1,10 @@
+{
+  "agent_name": "base-template-b6",
+  "repo": "base-template",
+  "lane": "types",
+  "roadmap": "coordination-layer-port",
+  "started_at": "2026-08-21T12:17:35Z",
+  "heartbeat": "2026-08-21T13:06:26Z",
+  "current_block": "OK.6.A",
+  "block_started_at": "2026-08-21T12:20:00Z"
+}

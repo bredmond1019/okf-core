@@ -6,6 +6,7 @@
 //! the frontmatter contract has exactly one source of truth across the
 //! workspace.
 
+mod coord;
 mod doc;
 mod frontmatter;
 mod graph;
@@ -13,6 +14,14 @@ mod graph_emit;
 mod parse;
 mod state;
 
+pub use coord::{
+    COORD_STALE_TTL_SECONDS, Coord, Disposal, DisposalBreadth, DisposalFile, DisposalRoute,
+    DisposalRow, DrainLog, DrainLogEntry, DurableHomeChannel, Escalation, EscalationDurableHome,
+    EscalationRecord, HeartbeatRecord, HeartbeatValue, Lease, LeaseKind, LeaseRecord, LeaseScope,
+    Message, MessageDurableHome, MessageKind, MessageRecord, MessageSender, MessageSubject,
+    PidSource, Registry, RegistryClaim, Slot, SlotRecord, SweepDiscovery, SweepLane,
+    SweepRunRecord, SweepRunRecordEntry, SweepSnapshot, SweepSnapshotRecord,
+};
 pub use doc::{
     Action, BodySection, BodySpec, BrainDocModel, Contact, FrontmatterValue, IndexIntent,
     LearningArtifact, LearningArtifactError, NestedParseError, Opportunity, OpportunityError,

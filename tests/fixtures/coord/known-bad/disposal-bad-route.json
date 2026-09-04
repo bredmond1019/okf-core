@@ -1,0 +1,22 @@
+{
+  "analysis": "planning/pattern-analysis.md",
+  "generated": "2026-09-03T00:00:00Z",
+  "roadmaps": ["coordination-layer-port"],
+  "backfilled": false,
+  "conventions": { "ungrounded_excludes": ["id"] },
+  "rows": [
+    {
+      "finding_id": "known-bad-route-fixture",
+      "mechanism": "M0",
+      "route": "escalate",
+      "owner_repo": "okf-core",
+      "needs": "code",
+      "severity": "P1",
+      "breadth": { "repos": 1, "instances": null },
+      "evidence": ["planning/known-bad.md:1"],
+      "payload": {},
+      "ungrounded": ["origin"],
+      "rationale": "Fixture exercising an out-of-enum route value."
+    }
+  ]
+}
