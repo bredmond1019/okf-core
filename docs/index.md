@@ -7,7 +7,7 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [okf-core, docs index, architecture, checks, git hooks]
-related: [core:okf-core, okf-core-architecture, okf-core-checks]
+related: [core:okf-core, okf-core-architecture, okf-core-checks, okf-core-type-contract]
 ---
 
 # okf-core docs
@@ -20,6 +20,7 @@ round-trip.
 | Doc | One line |
 |---|---|
 | [`architecture.md`](architecture.md) | Module map, data flow, and the mechanisms a change has to respect. |
+| [`type-contract.md`](type-contract.md) | The load-bearing Rust types linked into mev/bastion/engine-rs, what breaks each, and the same-wave sequencing rule. |
 
 ## Running the checks
 
