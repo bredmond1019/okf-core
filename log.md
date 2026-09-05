@@ -7,10 +7,18 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: "2026-09-01T00:35:47-03:00"
+timestamp: 2026-09-05T09:23:53-03:00
 ---
 
 # Log
+
+## [2026-09-05]
+
+### okf-core lane run 2 — LearningArtifact and Carryover gain their missing fields
+- **What:** Closed `OK.ticket.learning-artifact-missing-title-description` (`fe8da8a`) and `OK.ticket.carryover-summary-field` (`b866ced`); filed `brain:HQ.chore.document-carryover-summary-field` for the brain-doc half; patched `docs/architecture.md` (`28e86e0`). Repaired the `consumer-gate-passes-when-a-consumer-was-skipped-dirty` carryover predicate, which had gone true while the finding was still live.
+- **Why:** engine-rs's content pipeline was materializing corpus docs without the `title`/`description` D27 requires, and three renderers were each faking a one-line carryover label because the schema had none. The predicate repair came out of the same run reproducing the consumer-gate gap twice — `compiled 3 of 3` on one block, `compiled 0 of 3` with exit 0 on the next.
+- **Refs:** `planning/orchestration-run/fleet-drift-detection/notes.md`, `review.md`
+
 
 ## [run: 2026-09-04]
 
