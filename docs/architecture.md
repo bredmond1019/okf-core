@@ -193,9 +193,15 @@ A sketched `BrainDocModel` over the engine-rs content-pipeline POST payload
 digest_markdown, entities, language}`. "Sketched" means it compiles, implements the trait, and
 round-trips a fixture — not a field-by-field contract the way `Opportunity` is.
 
-- `LearningArtifact { artifact_id, channel_type, source_ref, summary, entities, language,
-  digest_markdown }` — `digest_markdown` renders as a `Generated` body section under the
-  `"digest"` marker (prose, not a frontmatter scalar/list value).
+- `LearningArtifact { artifact_id, title, description, channel_type, source_ref, summary,
+  entities, language, digest_markdown }` — `digest_markdown` renders as a `Generated` body section
+  under the `"digest"` marker (prose, not a frontmatter scalar/list value). `title` and
+  `description` are emitted as the 2nd and 3rd frontmatter keys, immediately after `type`, because
+  [D27](file:///Users/brandon/Dev/agentic-portfolio/docs/decisions/D27-enriched-okf-frontmatter.md)
+  makes both REQUIRED on every corpus document; added by `OK.ticket.learning-artifact-missing-title-description`
+  (2026-09-04). Note the POST payload above does not carry them yet — until
+  `core/engine-rs:EN.ticket.content-pipeline-payload-missing-okf-title-description` lands, both
+  default to the empty string, so a materialized file has the keys but no values.
 - `LearningArtifactError::MissingField(&'static str)`.
 - `from_payload(&serde_json::Value)` — consumed leniently (missing fields default to empty
   string/list rather than erroring).
