@@ -778,6 +778,15 @@ pub struct Backlog {
     /// (AGENTS.md rule 3); evaluation is mev's `MV.ticket.backlog-sweep-verb`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready_when: Option<ClearsWhen>,
+    /// Cross-repo epic membership — zero or more slugs into the HQ `epics[]`
+    /// registry. Multi-valued because a block can genuinely serve two
+    /// initiatives at once (e.g. an API endpoint used by two Surfaces).
+    ///
+    /// Authored. Validated against the registry by mev
+    /// (`E_STATE_UNKNOWN_EPIC`). Skipped when empty so untagged backlog
+    /// entries stay byte-identical across an `emit-state --write`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub epics: Vec<String>,
     /// Unmodeled fields, captured whole (see [`TrackBlock::extra`]).
     #[serde(flatten, default)]
     pub extra: serde_json::Map<String, serde_json::Value>,

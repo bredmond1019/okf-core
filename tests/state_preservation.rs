@@ -1598,3 +1598,67 @@ fn fleet_correctness_out_of_vocabulary_value_does_not_abort_file_load() {
             .is_known()
     );
 }
+
+// ---------------------------------------------------------------------------
+// `backlog[].epics` — added in `OK.ticket.backlog-entries-carry-an-epic`
+// (task 1). Mirrors `TrackBlock::epics` exactly in name, shape and serde
+// treatment; these two tests prove the round-trip and the negative control
+// that pins `skip_serializing_if` against writing `"epics": []` into every
+// backlog entry in the fleet on the next `emit-state --write`.
+// ---------------------------------------------------------------------------
+
+/// A backlog entry carrying `epics` survives a load/re-serialize cycle with
+/// the value intact, byte-for-byte at the JSON-value level.
+#[test]
+fn backlog_entry_with_epics_round_trips() {
+    let raw = r#"{
+        "slug": "state-graph-expansion",
+        "title": "state graph expansion",
+        "repo": "mev",
+        "type": "improvement",
+        "status": "idea",
+        "depends_on": [],
+        "block": null,
+        "notes": null,
+        "epics": ["backlog"]
+    }"#;
+
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let entry: Backlog = serde_json::from_str(raw).unwrap();
+    assert_eq!(entry.epics, vec!["backlog".to_string()]);
+
+    let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
+    assert_eq!(original, round);
+}
+
+/// The load-bearing negative control: a backlog entry with no `epics` key
+/// gains none after a load/re-serialize cycle — pins `skip_serializing_if`
+/// against a regression that would write `"epics": []` into every one of the
+/// fleet's ~45 existing backlog entries.
+#[test]
+fn backlog_entry_without_epics_gains_no_key() {
+    let raw = r#"{
+        "slug": "learn-ai-long-form-navigation",
+        "title": "learn-ai: long-form posts have no navigation and one exit at 92% scroll depth",
+        "repo": "learn-ai",
+        "type": "improvement",
+        "status": "idea",
+        "depends_on": [],
+        "block": null,
+        "notes": "Sticky TOC in the empty left gutter.",
+        "created": "2026-08-08"
+    }"#;
+
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let entry: Backlog = serde_json::from_str(raw).unwrap();
+    assert!(entry.epics.is_empty());
+
+    let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
+    assert_eq!(original, round);
+
+    let round_obj = round.as_object().unwrap();
+    assert!(
+        !round_obj.contains_key("epics"),
+        "epics must stay omitted from the output when empty, got: {round:?}"
+    );
+}

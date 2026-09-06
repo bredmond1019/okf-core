@@ -203,6 +203,23 @@ fn backlog_default_has_no_phantom_keys() {
     );
 }
 
+/// Explicit named guard for `backlog[].epics`
+/// (`OK.ticket.backlog-entries-carry-an-epic`): a default `Backlog` must
+/// serialize WITHOUT it. `backlog_default_has_no_phantom_keys` above already
+/// covers this by construction (the name is simply absent from its
+/// `known_fields` list); naming it here means a future author who drops the
+/// field's `skip_serializing_if` gets a failure that says exactly which
+/// field regressed, rather than a generic "unexpected key" message.
+#[test]
+fn backlog_default_omits_epics() {
+    let value = serde_json::to_value(Backlog::default()).unwrap();
+    let obj = value.as_object().expect("expected a JSON object");
+    assert!(
+        !obj.contains_key("epics"),
+        "a default Backlog must omit `epics` (keep skip_serializing_if): {value}"
+    );
+}
+
 #[test]
 fn epic_default_has_no_phantom_keys() {
     let value = serde_json::to_value(Epic::default()).unwrap();
