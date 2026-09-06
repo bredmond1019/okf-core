@@ -163,6 +163,24 @@ fn track_block_default_has_no_phantom_keys() {
     );
 }
 
+/// Explicit named guard for `fleet_correctness` (D80,
+/// `OK.ticket.track-block-gains-a-fleet-correctness-field`): a default
+/// `TrackBlock` must serialize WITHOUT it.
+/// `track_block_default_has_no_phantom_keys` above already covers this by
+/// construction (the name is simply absent from its `known_fields` list);
+/// naming it here means a future author who drops the field's
+/// `skip_serializing_if` gets a failure that says exactly which field
+/// regressed, rather than a generic "unexpected key" message.
+#[test]
+fn track_block_default_omits_fleet_correctness() {
+    let value = serde_json::to_value(TrackBlock::default()).unwrap();
+    let obj = value.as_object().expect("expected a JSON object");
+    assert!(
+        !obj.contains_key("fleet_correctness"),
+        "a default TrackBlock must omit `fleet_correctness` (keep skip_serializing_if): {value}"
+    );
+}
+
 #[test]
 fn backlog_default_has_no_phantom_keys() {
     let value = serde_json::to_value(Backlog::default()).unwrap();
@@ -246,6 +264,20 @@ fn carryover_default_omits_priority_blocks_finding_id() {
     assert!(
         !obj.contains_key("finding_id"),
         "a default Carryover must omit `finding_id` (do not copy `related`'s bare #[serde(default)]): {value}"
+    );
+}
+
+/// Explicit named guard for `fleet_correctness` (D80,
+/// `OK.ticket.track-block-gains-a-fleet-correctness-field`): a default
+/// `Carryover` must serialize WITHOUT it, same reasoning as
+/// `carryover_default_omits_priority_blocks_finding_id` above.
+#[test]
+fn carryover_default_omits_fleet_correctness() {
+    let value = serde_json::to_value(Carryover::default()).unwrap();
+    let obj = value.as_object().expect("expected a JSON object");
+    assert!(
+        !obj.contains_key("fleet_correctness"),
+        "a default Carryover must omit `fleet_correctness` (keep skip_serializing_if): {value}"
     );
 }
 

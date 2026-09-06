@@ -18,8 +18,9 @@
 
 use okf_core::{
     ApprovalDep, Backlog, BlockDep, BlockedBy, Carryover, CarryoverKind, CarryoverNeeds,
-    ClearsWhen, ClearsWhenPredicate, ExternalDep, KnownCarryoverKind, KnownCarryoverNeeds,
-    OperatorDep, StateFile, StateLoadError, TrackBlock, load_state,
+    ClearsWhen, ClearsWhenPredicate, ExternalDep, FleetCorrectness, KnownCarryoverKind,
+    KnownCarryoverNeeds, KnownFleetCorrectness, OperatorDep, StateFile, StateLoadError, TrackBlock,
+    load_state,
 };
 
 /// A `state.json` string carrying an invented key, `"future_field": "keep me"`, at every
@@ -1356,4 +1357,244 @@ fn backlog_entry_with_both_predicates_preserves_both_distinctly() {
 
     let round: serde_json::Value = serde_json::to_value(&entry).unwrap();
     assert_eq!(original, round);
+}
+
+// ---------------------------------------------------------------------------
+// `fleet_correctness` (D80 F0-F3) — added on both `TrackBlock` and
+// `Carryover` (see
+// `planning/OK.ticket.track-block-gains-a-fleet-correctness-field`). These
+// are the load-bearing regression assertions: `note` was listed as authored
+// in `docs/state/state-schema.md` while `TrackBlock` omitted the struct
+// field, so every `mev emit-state --write` re-serialization silently
+// deleted every note in every `state.json` — found only on 2026-08-03. A
+// field added to the struct on one container and not the other, or added
+// to the struct but never exercised end-to-end through a real
+// `state.json`, reproduces that exact destructive round-trip on the
+// grades.
+// ---------------------------------------------------------------------------
+
+/// A `state.json` fixture carrying `fleet_correctness` on BOTH a
+/// `tracks[].blocks[]` entry AND a `carryover[]` entry survives a
+/// deserialize -> serialize round-trip with both values intact, asserted
+/// directly rather than inferred from unit-level enum tests alone.
+#[test]
+fn fleet_correctness_round_trips_on_both_track_block_and_carryover() {
+    let raw = r#"{
+        "repo": "bastion",
+        "kind": "project",
+        "updated": "2026-09-06",
+        "note": null,
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [
+            {
+                "title": "Phase 1",
+                "blocks": [
+                    {
+                        "id": "BA.1.A",
+                        "title": "some block",
+                        "status": "open",
+                        "depends_on": [],
+                        "wave": null,
+                        "origin": null,
+                        "priority": null,
+                        "due": null,
+                        "sdlc_workflow": null,
+                        "model": null,
+                        "fleet_correctness": "F1"
+                    }
+                ]
+            }
+        ],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [
+            {
+                "slug": "some-finding",
+                "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+                "kind": "deferred",
+                "text": "some finding text",
+                "related": [],
+                "clears_when": null,
+                "fleet_correctness": "F2",
+                "created": "2026-09-06"
+            }
+        ]
+    }"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let file: StateFile = serde_json::from_str(raw).unwrap();
+    assert_eq!(
+        file.tracks[0].blocks[0].fleet_correctness,
+        Some(FleetCorrectness::Known(KnownFleetCorrectness::F1))
+    );
+    assert_eq!(
+        file.carryover[0].fleet_correctness,
+        Some(FleetCorrectness::Known(KnownFleetCorrectness::F2))
+    );
+
+    let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+    assert_eq!(original, round);
+}
+
+/// A `state.json` with NO `fleet_correctness` anywhere round-trips
+/// unchanged, and neither container gains a `"fleet_correctness": null`
+/// key — the negative control that protects every fleet `state.json`
+/// predating this field. Without it, a regression in
+/// `skip_serializing_if` could write `null` into every entry fleet-wide
+/// with nothing failing.
+#[test]
+fn state_file_without_fleet_correctness_round_trips_and_gains_no_key() {
+    let raw = r#"{
+        "repo": "bastion",
+        "kind": "project",
+        "updated": "2026-09-06",
+        "note": null,
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [
+            {
+                "title": "Phase 1",
+                "blocks": [
+                    {
+                        "id": "BA.1.A",
+                        "title": "some block",
+                        "status": "open",
+                        "depends_on": [],
+                        "wave": null,
+                        "origin": null,
+                        "priority": null,
+                        "due": null,
+                        "sdlc_workflow": null,
+                        "model": null
+                    }
+                ]
+            }
+        ],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [
+            {
+                "slug": "some-finding",
+                "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+                "kind": "deferred",
+                "text": "some finding text",
+                "related": [],
+                "clears_when": null,
+                "created": "2026-09-06"
+            }
+        ]
+    }"#;
+    let original: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+    let file: StateFile = serde_json::from_str(raw).unwrap();
+    assert_eq!(file.tracks[0].blocks[0].fleet_correctness, None);
+    assert_eq!(file.carryover[0].fleet_correctness, None);
+
+    let round: serde_json::Value = serde_json::to_value(&file).unwrap();
+    assert_eq!(original, round);
+
+    let round_block = round["tracks"][0]["blocks"][0].as_object().unwrap();
+    assert!(
+        !round_block.contains_key("fleet_correctness"),
+        "fleet_correctness must stay omitted on TrackBlock when absent from the input"
+    );
+    let round_carryover = round["carryover"][0].as_object().unwrap();
+    assert!(
+        !round_carryover.contains_key("fleet_correctness"),
+        "fleet_correctness must stay omitted on Carryover when absent from the input"
+    );
+}
+
+/// An out-of-vocabulary `fleet_correctness` value (e.g. `"F4"`) loads
+/// without error, lands in `Unknown`, survives re-serialization verbatim,
+/// and `is_known()` reports `false` for it. This is the whole point of the
+/// `Unknown(String)` fallback: a bad value is fixable in place and never
+/// fails the whole file (unlike a bare enum, which would abort
+/// deserialization of the entire `state.json` on one hand-typed typo).
+#[test]
+fn fleet_correctness_out_of_vocabulary_value_does_not_abort_file_load() {
+    let raw_value = "F4";
+    let raw = format!("\"{raw_value}\"");
+    let grade: FleetCorrectness = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        grade,
+        FleetCorrectness::Unknown(raw_value.to_string()),
+        "{raw_value} must deserialize to Unknown(..) unchanged"
+    );
+    assert!(!grade.is_known(), "{raw_value} must report not-known");
+
+    let round = serde_json::to_string(&grade).unwrap();
+    assert_eq!(
+        round, raw,
+        "{raw_value} must re-serialize byte-identically, not normalized"
+    );
+
+    let file_raw = r#"{
+        "repo": "bastion",
+        "kind": "project",
+        "updated": "2026-09-06",
+        "note": null,
+        "focus": {"now": [], "next": [], "blocked": []},
+        "tracks": [
+            {
+                "title": "Phase 1",
+                "blocks": [
+                    {
+                        "id": "BA.1.A",
+                        "title": "some block",
+                        "status": "open",
+                        "depends_on": [],
+                        "fleet_correctness": "F4"
+                    }
+                ]
+            }
+        ],
+        "repos": [],
+        "cross_repo": [],
+        "tiers": [],
+        "backlog": [],
+        "carryover": [
+            {
+                "slug": "some-finding",
+                "scope": {"repo": "bastion", "tier": null, "cross_repo": null},
+                "kind": "deferred",
+                "text": "some finding text",
+                "related": [],
+                "fleet_correctness": "0",
+                "created": "2026-09-06"
+            }
+        ]
+    }"#;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    std::fs::write(&path, file_raw).unwrap();
+
+    let state =
+        load_state(&path).expect("unknown fleet_correctness value must not abort file load");
+    assert_eq!(
+        state.tracks[0].blocks[0].fleet_correctness,
+        Some(FleetCorrectness::Unknown("F4".to_string()))
+    );
+    assert!(
+        !state.tracks[0].blocks[0]
+            .fleet_correctness
+            .as_ref()
+            .unwrap()
+            .is_known()
+    );
+    assert_eq!(
+        state.carryover[0].fleet_correctness,
+        Some(FleetCorrectness::Unknown("0".to_string()))
+    );
+    assert!(
+        !state.carryover[0]
+            .fleet_correctness
+            .as_ref()
+            .unwrap()
+            .is_known()
+    );
 }
