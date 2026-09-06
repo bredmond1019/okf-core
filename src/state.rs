@@ -458,6 +458,14 @@ pub struct TrackBlock {
     /// blocks whose whole value was the provenance recorded in exactly this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// D80's fleet-correctness grade (`F0`..`F3`), the blast-radius axis
+    /// alongside D43's money-anchor `priority` — deliberately never blended
+    /// or averaged with it (D80). Optional and defaults to absent:
+    /// `skip_serializing_if` keeps ungraded blocks byte-identical rather
+    /// than gaining a `"fleet_correctness": null` line on the next
+    /// `mev emit-state --write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fleet_correctness: Option<FleetCorrectness>,
     /// Longer human-facing description of the block, for surfaces that have room to
     /// render more than `title` — bastion-web's board being the first consumer.
     ///
@@ -911,6 +919,79 @@ pub enum CarryoverNeeds {
     Unknown(String),
 }
 
+/// The fixed, known D80 fleet-correctness grade vocabulary (`F0`..`F3`) —
+/// the blast-radius axis alongside D43's money anchor, deliberately never
+/// blended or averaged with it (D80).
+///
+/// Carries the typeshare annotation itself (rather than the enclosing
+/// [`FleetCorrectness`] wrapper) per [`BlockedBy`]'s documented rule at
+/// src/state.rs:196: typeshare cannot represent an untagged algebraic enum,
+/// so the payload type is annotated and the wrapper is not.
+///
+/// No `#[serde(rename_all = "snake_case")]` here — D80's on-disk vocabulary
+/// is the uppercase `"F0"`..`"F3"`, and `snake_case` would serialize `F0` as
+/// `f0`. Each variant instead carries an explicit `#[serde(rename = ...)]`.
+///
+/// Exhaustive, for the same reason as [`KnownCarryoverNeeds`]: it is the
+/// closed reference vocabulary the wrapping [`FleetCorrectness`] already
+/// degrades unrecognized values against, so `#[non_exhaustive]` here would
+/// duplicate that degradation one layer too early.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+pub enum KnownFleetCorrectness {
+    #[serde(rename = "F0")]
+    F0,
+    #[serde(rename = "F1")]
+    F1,
+    #[serde(rename = "F2")]
+    F2,
+    #[serde(rename = "F3")]
+    F3,
+}
+
+/// D80's fleet-correctness grade, typed with an `Unknown(String)` fallback.
+///
+/// Untagged: `Known` MUST stay the first variant. `#[serde(untagged)]` tries
+/// variants in declaration order, and the reverse would swallow every known
+/// value into `Unknown(String)`, silently defeating the whole point of the
+/// enum while every round-trip test still passes.
+///
+/// Mirrors [`CarryoverNeeds`] exactly: a live entry with an unrecognized
+/// grade is fixable in place, so it must round-trip rather than fail the
+/// whole file. A hard rejection would mean one hand-typed `"F4"` makes the
+/// entire state.json fail to parse (`E_STATE_MALFORMED_JSON`), killing every
+/// state check on that file for every concurrent lane.
+///
+/// Deliberately NOT typeshare-annotated — see [`KnownFleetCorrectness`].
+///
+/// okf-core defines the SHAPE only and never validates or evaluates it
+/// (AGENT.md rule 3); emitting the named out-of-vocabulary diagnostic is
+/// mev's block, which calls [`FleetCorrectness::is_known`].
+///
+/// Exhaustive, for the same reason as [`CarryoverNeeds`]: the
+/// `Unknown(String)` fallback already IS this type's runtime-degradation
+/// answer, orthogonal to `#[non_exhaustive]`'s compile-time contract, and
+/// there is no top-level variant expected to grow.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum FleetCorrectness {
+    /// One of the fixed, known F0..F3 grades.
+    Known(KnownFleetCorrectness),
+    /// Anything else — preserved verbatim rather than rejected or coerced.
+    Unknown(String),
+}
+
+impl FleetCorrectness {
+    /// Pure predicate — no I/O, no diagnostic emission. `true` for any
+    /// `Known` grade, `false` for an `Unknown` value. This is the whole of
+    /// okf-core's involvement in validating the grade: mev's own block
+    /// calls this to decide whether to emit the named out-of-vocabulary
+    /// diagnostic.
+    pub fn is_known(&self) -> bool {
+        matches!(self, FleetCorrectness::Known(_))
+    }
+}
+
 /// A durable caveat, known issue, environmental note, or deferred follow-on.
 ///
 /// Derives `Default` so downstream consumers construct this with
@@ -942,6 +1023,14 @@ pub struct Carryover {
     /// blocking-ness is DERIVED from `blocks[]` and is never authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<u8>,
+    /// D80's fleet-correctness grade (`F0`..`F3`) — the interim home named
+    /// by D80 for a carryover entry, alongside the block-side field of the
+    /// same name on `TrackBlock`. Optional and defaults to absent:
+    /// `skip_serializing_if` keeps ungraded entries byte-identical rather
+    /// than gaining a `"fleet_correctness": null` line on the next
+    /// `mev emit-state --write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fleet_correctness: Option<FleetCorrectness>,
     /// Edges to the work this carryover blocks. Same forms as `blocked_by` —
     /// `External { what }` covers "blocks every ticket run fleet-wide", which
     /// has no node target.

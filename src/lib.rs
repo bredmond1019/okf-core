@@ -35,9 +35,9 @@ pub use parse::{Frontmatter, ParseResult, extract_frontmatter, parse_frontmatter
 pub use state::{
     AmendsRef, ApprovalDep, Backlog, BacklogOrigin, Block, BlockDep, BlockedBy, Carryover,
     CarryoverArchiveRow, CarryoverKind, CarryoverNeeds, CarryoverScope, ClearsWhen,
-    ClearsWhenPredicate, CrossRepoEdge, DisposalReason, Endpoint, Epic, ExternalDep, Focus,
-    KnownCarryoverKind, KnownCarryoverNeeds, OperatorDep, Origin, Reference, RepoRollup, StateEdge,
-    StateEdgeKind, StateFile, StateGraph, StateLoadError, StateNode, StateSource, TierEntry, Track,
-    TrackBlock, W_STATE_OP_SLUG_STUTTER, build_state_graph, load_state, normalize_op_slug, op_id,
-    op_slug_stutters,
+    ClearsWhenPredicate, CrossRepoEdge, DisposalReason, Endpoint, Epic, ExternalDep,
+    FleetCorrectness, Focus, KnownCarryoverKind, KnownCarryoverNeeds, KnownFleetCorrectness,
+    OperatorDep, Origin, Reference, RepoRollup, StateEdge, StateEdgeKind, StateFile, StateGraph,
+    StateLoadError, StateNode, StateSource, TierEntry, Track, TrackBlock, W_STATE_OP_SLUG_STUTTER,
+    build_state_graph, load_state, normalize_op_slug, op_id, op_slug_stutters,
 };
