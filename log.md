@@ -7,10 +7,17 @@ layer: [brain, factory]
 project: okf-core
 status: active
 keywords: [log, okf-core]
-timestamp: 2026-09-05T09:23:53-03:00
+timestamp: 2026-09-11T08:15:00-03:00
 ---
 
 # Log
+
+## [2026-09-11]
+
+### coordination-layer-port `types` lane closed out — the last of six blocks lands
+- **What:** Closed `OK.ticket.message-envelope-field-caps` (`fa335a6`, `68777f7`) — `coord::message` gains five cap constants mirroring base-template's `message.schema.json`, a `CapViolation` struct, and `MessageRecord::cap_violations()`; deliberately no constant for the `durable_home.channel` enum field, whose cap can never fire. All gates re-verified by hand after the engine's own claim. Corrected a stale premise in the block record (base-template's schema now has six `maxLength` entries, not zero). Deleted a resolved `carryover[]` entry (`coord-stale-ttl-has-no-reader`) after confirming mev's `availability.rs` genuinely reads the constant now. Reopened and closed out `planning/orchestration-run/coordination-layer-port/` (was `consolidated`, now `lane-complete`).
+- **Why:** This was the lane's sixth and last open block, appended 2026-09-10 for the `rust-unattended-chain` initiative so engine-rs's inbox triage (`EN.17.E`) can refuse an oversize cross-lane message before acting on it. Driven via `/begin-orchestration --roadmap coordination-layer-port --lane types --execute`, with standing operator authorization to decide in-lane without asking.
+- **Refs:** `planning/orchestration-run/coordination-layer-port/notes.md`, `review.md`, `verification-ledger.json`
 
 ## [2026-09-05]
 
