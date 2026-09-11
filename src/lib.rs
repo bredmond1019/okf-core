@@ -15,12 +15,13 @@ mod parse;
 mod state;
 
 pub use coord::{
-    COORD_STALE_TTL_SECONDS, Coord, Disposal, DisposalBreadth, DisposalFile, DisposalRoute,
-    DisposalRow, DrainLog, DrainLogEntry, DurableHomeChannel, Escalation, EscalationDurableHome,
-    EscalationRecord, HeartbeatRecord, HeartbeatValue, Lease, LeaseKind, LeaseRecord, LeaseScope,
-    Message, MessageDurableHome, MessageKind, MessageRecord, MessageSender, MessageSubject,
-    PidSource, Registry, RegistryClaim, Slot, SlotRecord, SweepDiscovery, SweepLane,
-    SweepRunRecord, SweepRunRecordEntry, SweepSnapshot, SweepSnapshotRecord,
+    BODY_MAX_CHARS, COORD_STALE_TTL_SECONDS, CapViolation, Coord, DURABLE_HOME_REF_MAX_CHARS,
+    Disposal, DisposalBreadth, DisposalFile, DisposalRoute, DisposalRow, DrainLog, DrainLogEntry,
+    DurableHomeChannel, Escalation, EscalationDurableHome, EscalationRecord, HeartbeatRecord,
+    HeartbeatValue, Lease, LeaseKind, LeaseRecord, LeaseScope, Message, MessageDurableHome,
+    MessageKind, MessageRecord, MessageSender, MessageSubject, PidSource, Registry, RegistryClaim,
+    SUBJECT_BLOCK_MAX_CHARS, SUBJECT_REPO_MAX_CHARS, Slot, SlotRecord, SweepDiscovery, SweepLane,
+    SweepRunRecord, SweepRunRecordEntry, SweepSnapshot, SweepSnapshotRecord, VERIFIED_BY_MAX_CHARS,
 };
 pub use doc::{
     Action, BodySection, BodySpec, BrainDocModel, Contact, FrontmatterValue, IndexIntent,

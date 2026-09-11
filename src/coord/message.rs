@@ -115,6 +115,75 @@ pub enum DurableHomeChannel {
     RunRecord,
 }
 
+/// Envelope field-length caps, mirrored from base-template's `message.schema.json`
+/// `maxLength` entries (BT.ticket.message-envelope-field-caps). Counted in Unicode scalar
+/// values (`.chars().count()`), matching JSON Schema `maxLength` semantics — not
+/// `.len()`, which counts bytes.
+///
+/// The schema also caps `durable_home.channel` at `maxLength: 100`, but that field is the
+/// closed 4-variant [`DurableHomeChannel`] enum, not a `String` — its longest serialized tag
+/// (`"state-edge"`, 10 chars) can never approach a 100-char cap, so there is deliberately no
+/// constant for it here: capping it would be a check that can never fire.
+pub const SUBJECT_REPO_MAX_CHARS: usize = 100;
+/// See [`SUBJECT_REPO_MAX_CHARS`].
+pub const SUBJECT_BLOCK_MAX_CHARS: usize = 200;
+/// See [`SUBJECT_REPO_MAX_CHARS`].
+pub const BODY_MAX_CHARS: usize = 5800;
+/// See [`SUBJECT_REPO_MAX_CHARS`].
+pub const DURABLE_HOME_REF_MAX_CHARS: usize = 400;
+/// See [`SUBJECT_REPO_MAX_CHARS`].
+pub const VERIFIED_BY_MAX_CHARS: usize = 1900;
+
+/// One envelope field whose character count exceeds its fleet cap.
+///
+/// Caps are a check a consumer opts into by calling [`MessageRecord::cap_violations`] —
+/// never a parse failure. An over-cap envelope still deserializes as [`Coord::Typed`]; a
+/// live oversize message already on disk is never silently dropped to `Legacy` or refused
+/// mid-drain.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapViolation {
+    /// The dotted path of the field that exceeded its cap (e.g. `"subject.repo"`).
+    pub field: &'static str,
+    /// The cap that field is held to.
+    pub max: usize,
+    /// The field's actual character count (Unicode scalar values, not bytes).
+    pub actual: usize,
+}
+
+impl MessageRecord {
+    /// Checks every capped, variable-length field against its fleet cap and returns one
+    /// [`CapViolation`] per field that exceeds it. A value exactly at its cap produces no
+    /// violation for that field.
+    ///
+    /// Covers the five string-valued paths that can actually vary in length: `subject.repo`,
+    /// `subject.block` (when present), `body`, `durable_home.ref`, and `verified_by`.
+    /// `durable_home.channel` is deliberately not checked — see [`SUBJECT_REPO_MAX_CHARS`].
+    pub fn cap_violations(&self) -> Vec<CapViolation> {
+        let mut violations = Vec::new();
+
+        let mut check = |field: &'static str, value: &str, max: usize| {
+            let actual = value.chars().count();
+            if actual > max {
+                violations.push(CapViolation { field, max, actual });
+            }
+        };
+
+        check("subject.repo", &self.subject.repo, SUBJECT_REPO_MAX_CHARS);
+        if let Some(block) = &self.subject.block {
+            check("subject.block", block, SUBJECT_BLOCK_MAX_CHARS);
+        }
+        check("body", &self.body, BODY_MAX_CHARS);
+        check(
+            "durable_home.ref",
+            &self.durable_home.reference,
+            DURABLE_HOME_REF_MAX_CHARS,
+        );
+        check("verified_by", &self.verified_by, VERIFIED_BY_MAX_CHARS);
+
+        violations
+    }
+}
+
 /// The BT.6.A registry key identifying who sent a message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageSender {

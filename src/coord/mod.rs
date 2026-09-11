@@ -29,8 +29,9 @@ pub use escalation::{Escalation, EscalationDurableHome, EscalationRecord};
 pub use heartbeat::{HeartbeatRecord, HeartbeatValue};
 pub use lease::{Lease, LeaseKind, LeaseRecord, LeaseScope};
 pub use message::{
-    DurableHomeChannel, Message, MessageDurableHome, MessageKind, MessageRecord, MessageSender,
-    MessageSubject,
+    BODY_MAX_CHARS, CapViolation, DURABLE_HOME_REF_MAX_CHARS, DurableHomeChannel, Message,
+    MessageDurableHome, MessageKind, MessageRecord, MessageSender, MessageSubject,
+    SUBJECT_BLOCK_MAX_CHARS, SUBJECT_REPO_MAX_CHARS, VERIFIED_BY_MAX_CHARS,
 };
 pub use registry::{Registry, RegistryClaim};
 pub use slot::{PidSource, Slot, SlotRecord};
