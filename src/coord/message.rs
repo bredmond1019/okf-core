@@ -343,4 +343,231 @@ mod tests {
         let message: Message = serde_json::from_value(value).unwrap();
         assert!(message.is_legacy());
     }
+
+    #[test]
+    fn cap_boundary_is_inclusive_per_field() {
+        // (field name, cap, setter, at-cap-produces-no-violation-check)
+        struct Case {
+            field: &'static str,
+            cap: usize,
+        }
+        let cases = [
+            Case {
+                field: "subject.repo",
+                cap: SUBJECT_REPO_MAX_CHARS,
+            },
+            Case {
+                field: "subject.block",
+                cap: SUBJECT_BLOCK_MAX_CHARS,
+            },
+            Case {
+                field: "body",
+                cap: BODY_MAX_CHARS,
+            },
+            Case {
+                field: "durable_home.ref",
+                cap: DURABLE_HOME_REF_MAX_CHARS,
+            },
+            Case {
+                field: "verified_by",
+                cap: VERIFIED_BY_MAX_CHARS,
+            },
+        ];
+
+        for case in cases {
+            let at_cap = "a".repeat(case.cap);
+            let over_cap = "a".repeat(case.cap + 1);
+
+            let mut message = full_message();
+            match case.field {
+                "subject.repo" => message.subject.repo = at_cap.clone(),
+                "subject.block" => message.subject.block = Some(at_cap.clone()),
+                "body" => message.body = at_cap.clone(),
+                "durable_home.ref" => message.durable_home.reference = at_cap.clone(),
+                "verified_by" => message.verified_by = at_cap.clone(),
+                other => panic!("unhandled field in test table: {other}"),
+            }
+            let violations = message.cap_violations();
+            assert!(
+                violations.iter().all(|v| v.field != case.field),
+                "field {} at its cap ({} chars) produced a violation: {violations:?}",
+                case.field,
+                case.cap
+            );
+
+            let mut message = full_message();
+            match case.field {
+                "subject.repo" => message.subject.repo = over_cap.clone(),
+                "subject.block" => message.subject.block = Some(over_cap.clone()),
+                "body" => message.body = over_cap.clone(),
+                "durable_home.ref" => message.durable_home.reference = over_cap.clone(),
+                "verified_by" => message.verified_by = over_cap.clone(),
+                other => panic!("unhandled field in test table: {other}"),
+            }
+            let violations = message.cap_violations();
+            let matching: Vec<&CapViolation> = violations
+                .iter()
+                .filter(|v| v.field == case.field)
+                .collect();
+            assert_eq!(
+                matching.len(),
+                1,
+                "field {} one char over its cap should produce exactly one violation, got: {violations:?}",
+                case.field
+            );
+            assert_eq!(matching[0].actual, case.cap + 1);
+            assert_eq!(matching[0].max, case.cap);
+        }
+    }
+
+    #[test]
+    fn cap_counts_characters_not_bytes() {
+        // '\u{20AC}' (EURO SIGN) encodes as 3 bytes in UTF-8 but is one Unicode scalar value.
+        let euro_at_cap: String = "\u{20AC}".repeat(BODY_MAX_CHARS);
+        assert_eq!(euro_at_cap.chars().count(), BODY_MAX_CHARS);
+        assert!(
+            euro_at_cap.len() > BODY_MAX_CHARS,
+            "sanity: byte length must exceed char count for this fixture to prove anything"
+        );
+
+        let mut message = full_message();
+        message.body = euro_at_cap;
+        let violations = message.cap_violations();
+        assert!(
+            violations.iter().all(|v| v.field != "body"),
+            "a value at the char cap built from 3-byte characters must not be flagged by \
+             byte length: {violations:?}"
+        );
+    }
+
+    #[test]
+    fn over_cap_envelope_still_parses_typed() {
+        let mut message = full_message();
+        message.body = "a".repeat(BODY_MAX_CHARS + 1);
+        let json = serde_json::to_string(&message).unwrap();
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+        assert!(
+            !parsed.is_legacy(),
+            "an over-cap envelope must still deserialize as Coord::Typed -- caps are a \
+             consumer-called check, never a parse failure"
+        );
+        assert_eq!(parsed.typed(), Some(&message));
+        assert_eq!(
+            parsed.typed().unwrap().cap_violations().len(),
+            1,
+            "the over-cap field should still be reported once cap_violations() is called"
+        );
+    }
+
+    /// Walk up from `start` looking for a directory containing `brain.toml`; honor
+    /// `OKF_CORE_BRAIN_ROOT` first when it is set and actually names one.
+    ///
+    /// Replicates `tests/live_tree.rs`'s `find_brain_root` inline: a unit test in this file
+    /// cannot import a symbol from a different integration-test binary, and this must be the
+    /// SAME resolution algorithm, not an independently invented one.
+    fn find_brain_root(start: &std::path::Path) -> Option<std::path::PathBuf> {
+        if let Ok(root) = std::env::var("OKF_CORE_BRAIN_ROOT") {
+            let candidate = std::path::PathBuf::from(root);
+            if candidate.join("brain.toml").is_file() {
+                return Some(candidate);
+            }
+        }
+        let mut dir = Some(start.to_path_buf());
+        while let Some(d) = dir {
+            if d.join("brain.toml").is_file() {
+                return Some(d);
+            }
+            dir = d.parent().map(std::path::Path::to_path_buf);
+        }
+        None
+    }
+
+    #[test]
+    fn caps_match_message_schema() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let brain_root = match find_brain_root(&manifest_dir) {
+            Some(root) => root,
+            None => {
+                println!(
+                    "caps_match_message_schema: no brain.toml found walking up from {} (and \
+                     OKF_CORE_BRAIN_ROOT is unset or does not name one) -- skipping cleanly, \
+                     this machine has no HQ vault to check against. Only a local run was \
+                     exercised for this task.",
+                    manifest_dir.display()
+                );
+                return;
+            }
+        };
+        let schema_path = brain_root
+            .join("base-template")
+            .join(".claude")
+            .join("workflows")
+            .join("message.schema.json");
+        let Ok(schema_raw) = std::fs::read_to_string(&schema_path) else {
+            println!(
+                "caps_match_message_schema: brain root {} found but {} does not exist -- \
+                 skipping cleanly. Only a local run was exercised for this task.",
+                brain_root.display(),
+                schema_path.display()
+            );
+            return;
+        };
+        let schema: serde_json::Value =
+            serde_json::from_str(&schema_raw).expect("message.schema.json must parse as JSON");
+
+        let props = &schema["properties"];
+        let checked: [(&str, usize); 5] = [
+            (
+                "subject.repo",
+                props["subject"]["properties"]["repo"]["maxLength"]
+                    .as_u64()
+                    .expect("subject.repo maxLength must be present in the schema")
+                    as usize,
+            ),
+            (
+                "subject.block",
+                props["subject"]["properties"]["block"]["maxLength"]
+                    .as_u64()
+                    .expect("subject.block maxLength must be present in the schema")
+                    as usize,
+            ),
+            (
+                "body",
+                props["body"]["maxLength"]
+                    .as_u64()
+                    .expect("body maxLength must be present in the schema")
+                    as usize,
+            ),
+            (
+                "durable_home.ref",
+                props["durable_home"]["properties"]["ref"]["maxLength"]
+                    .as_u64()
+                    .expect("durable_home.ref maxLength must be present in the schema")
+                    as usize,
+            ),
+            (
+                "verified_by",
+                props["verified_by"]["maxLength"]
+                    .as_u64()
+                    .expect("verified_by maxLength must be present in the schema")
+                    as usize,
+            ),
+        ];
+
+        for (field, schema_max) in checked {
+            let rust_max = match field {
+                "subject.repo" => SUBJECT_REPO_MAX_CHARS,
+                "subject.block" => SUBJECT_BLOCK_MAX_CHARS,
+                "body" => BODY_MAX_CHARS,
+                "durable_home.ref" => DURABLE_HOME_REF_MAX_CHARS,
+                "verified_by" => VERIFIED_BY_MAX_CHARS,
+                other => panic!("unhandled field in schema check table: {other}"),
+            };
+            assert_eq!(
+                rust_max, schema_max,
+                "okf-core's {field} cap ({rust_max}) must equal message.schema.json's \
+                 maxLength for {field} ({schema_max})"
+            );
+        }
+    }
 }
